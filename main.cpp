@@ -54,20 +54,28 @@ int main()
 	
 
 	//QR solver
-	Matrix::matrix* A = Matrix::newMatrix(5, 5);
-	Matrix::matrix* Q = Matrix::newMatrix(5, 5);
-	Matrix::matrix* R = Matrix::newMatrix(5, 5);
-	double val[] = {2,7,1,8,2,0,8,1,8,2,0,0,8,4,5,0,0,0,9,0,0,0,0,0,4};
+	Matrix::matrix* A = Matrix::newMatrix(3, 3);
+	Matrix::matrix* Q = Matrix::newMatrix(3, 3);
+	Matrix::matrix* R = Matrix::newMatrix(3, 3);
+	double val[] = { 2.92, 0.86, -1.15, 0.86, 6.51, 3.32, -1.15, 3.32, 4.57};
 	A->data = val;
 	
-	Matrix::matrix* b = Matrix::newMatrix(5,1); double bval[] = { 3,1,4,1,5 }; b->data = bval;
-	Matrix::matrix* x = Matrix::newMatrix(5, 1);
-	print(A);
-	print(b);
-	Matrix::solver(A, b, x);
-	print(x);
+	Matrix::matrix* b = Matrix::newMatrix(3,1); double bval[] = { 2,1,4}; b->data = bval;
+	Matrix::matrix* x = Matrix::newMatrix(3, 1);
+	Matrix::matrix* E = Matrix::newMatrix(3, 1);
+	
+	Matrix::eigendecomposition(A, Q, R);
+	print(A); print(Q); print(R);
 
-	householder(A, Q, R);
-	print(Q);
+	utils::PointCloud modelcloud;
+	segmentpcd::_LoadPly("image/SurfaceSampledModel.ply", modelcloud);
+
+	utils::computeNormals(&modelcloud, 10);
+
+	//char buffer[50];
+	//int n = sprintf_s(buffer, "image/0_%d_pcd.txt", 0);
+	std::ofstream out("image/model.txt");
+	for(auto pt: modelcloud.points) out << pt.x << "," << pt.y << "," << pt.z << "," << pt.nx << "," << pt.ny << "," << pt.nz << "\n";
+
 	return 1;
 }

@@ -127,6 +127,7 @@ BOOL segmentpcd::_LoadPly(char const* i_strPlyPath, utils::PointCloud& o_PointCl
 	o_PointCloud.points = std::vector<utils::point>(vecPos.size());
 	o_PointCloud.size = o_PointCloud.points.size();
 
+#pragma omp parallel for
 	for (int i = 0; i < o_PointCloud.size; i++)
 	{
 		o_PointCloud.points.at(i).x = vecPos.at(i)[0];
@@ -357,9 +358,9 @@ void segmentpcd::_clip_bolt_pcd(segmentpcd::Bboxes& bboxes, segmentpcd::Image& o
 		o_pointclouds.output_clouds.push_back(o_pointcloud);
 		//std::cout << o_pointclouds.output_clouds.size();
 
-		char buffer[50];
-		int n = sprintf_s(buffer, "image/0_%d_pcd.txt", id);
-		std::ofstream out(buffer);
+		//char buffer[50];
+		//int n = sprintf_s(buffer, "image/0_%d_pcd.txt", id);
+		//std::ofstream out(buffer);
 
 		for (int y_p = bbox.y_left; y_p < bbox.y_left + masks.masks.at(id).height; y_p++)
 		{

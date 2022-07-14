@@ -34,15 +34,120 @@ void utils::PointCloud_mean(const utils::PointCloud& pointcloud, utils::point& m
 	mean /= (float) pointcloud.points.size();
 }
 
+void utils::shiftByMean(utils::PointCloud* cloud, utils::point& mean)
+{
+	utils::PointCloud_mean(*cloud, mean);
+	for (auto& pt : cloud->points) pt = pt - mean;
+}
+
+void utils::computeNormals(utils::PointCloud* cloud, const size_t& n)
+{
+	const int num_neighbors = 20;   
+
+	//make a kdtree
+	typedef utils::PointCloudAdaptor my_kd_tree;
+	my_kd_tree pointcloudAdaptor(3, *cloud, n);
+	pointcloudAdaptor.index->buildIndex();
+	
+
+#pragma omp parallel for 
+	for (int i = 0; i < cloud->points.size(); i++) //cloud->points.size(); i++)
+	{
+		//do a knn search
+		utils::point pt = cloud->points.at(i);
+		double query_point[] = { pt.x, pt.y, pt.z };
+		size_t out_indices[num_neighbors];   //change to vertex later
+		double out_distances[num_neighbors]; //change to vertex later
+		
+		nanoflann::KNNResultSet<double> resultSet(num_neighbors);
+		resultSet.init(&out_indices[0], &out_distances[0]);
+		pointcloudAdaptor.index->findNeighbors(resultSet, &query_point[0], int(num_neighbors));
+
+		Matrix::matrix* N = Matrix::newMatrix(num_neighbors, 3);
+
+		utils::point mean;
+		#pragma omp parallel for
+		for (int idx = 1; idx <= num_neighbors; idx++)
+		{
+			mean = mean + cloud->points.at(out_indices[idx - 1]);
+		}
+		mean /= num_neighbors;
+
+		#pragma omp parallel for 
+		for (int idx = 1; idx <= num_neighbors; idx++)
+		{
+			Matrix::set(N, idx, 1, cloud->points.at(out_indices[idx-1]).x - mean.x);
+			Matrix::set(N, idx, 2, cloud->points.at(out_indices[idx-1]).y - mean.y);
+			Matrix::set(N, idx, 3, cloud->points.at(out_indices[idx-1]).z - mean.z);
+			//cloud->points.at(out_indices[idx - 1]).nz = 1.0;
+		}
+
+		Matrix::matrix* Cov = Matrix::scalar_prod(Matrix::product(Matrix::transpose(N), N), 1/(double)num_neighbors);
+		Matrix::matrix* Q = Matrix::newMatrix(3, 3); {};
+		Matrix::matrix* R = Matrix::newMatrix(3, 3); {};
+		Matrix::matrix* E = Matrix::newMatrix(3, 1); {};
+		
+		Matrix::eigendecomposition(Cov, Q, R);
+		print(Q);
+		double minEval[3]; Matrix::min(Cov, minEval, true);
+		Matrix::matrix* norm = getColumn(Q, minEval[2]);
+		
+		pt.nx = Matrix::get(norm, 1, 1);
+		pt.ny = Matrix::get(norm, 2, 1);
+		pt.nz = Matrix::get(norm, 3, 1);
+		cloud->points.at(i) = pt;
+	}
+}
+
+// Minimum Spanning Tree algorithm (Kruskal's algorithm)
+std::vector<WeightedEdge> Kruskal(std::vector<WeightedEdge>& edges,
+	size_t n_vertices) {
+	std::sort(edges.begin(), edges.end(),
+		[](WeightedEdge& e0, WeightedEdge& e1) {
+			return e0.weight_ < e1.weight_;
+		});
+	DisjointSet disjoint_set(n_vertices);
+	std::vector<WeightedEdge> mst;
+	for (size_t eidx = 0; eidx < edges.size(); ++eidx) {
+		size_t set0 = disjoint_set.Find(edges[eidx].v0_);
+		size_t set1 = disjoint_set.Find(edges[eidx].v1_);
+		if (set0 != set1) {
+			mst.push_back(edges[eidx]);
+			disjoint_set.Union(set0, set1);
+		}
+	}
+	return mst;
+}
+
+void utils::orientNormals(utils::PointCloud* cloud)
+{
+	//breadth first search or kruskal algorithm
+	
+
+}
+
+void Matrix::pcd2mat(utils::PointCloud* cloud, Matrix::matrix* mat)
+{
+#pragma omp parallel for 
+	for (int i = 0; i < cloud->points.size(); i++) 
+	{
+		Matrix::set(mat, i, 1, cloud->points.at(i).x);
+		Matrix::set(mat, i, 2, cloud->points.at(i).y);
+		Matrix::set(mat, i, 3, cloud->points.at(i).z);
+	}
+}
+
+
 Matrix::matrix* Matrix::newMatrix(int rows, int cols)
 {
 	if (rows <= 0 || cols <= 0) return NULL;
 	matrix* m = (matrix*)malloc(sizeof(matrix));
 
-	m->rows = rows;
-	m->cols = cols;
+	m->rows = rows; m->cols = cols;
 
 	m->data = (double*)malloc(rows * cols * sizeof(double));
+
+#pragma omp parallel for
 	for (int i = 0; i < rows * cols; i++) { m->data[i] = 0.0; }
 
 	return m;
@@ -65,9 +170,80 @@ double Matrix::get(matrix* m, int row, int col)
 	return m->data[(row - 1) * m->cols + (col - 1)];
 }
 
+int Matrix::min(matrix* m, double* out, const bool& diag)
+{
+	out[0] = get(m, 1, 1); out[1] = 1; out[2] = 1;
+
+	if (diag == false)
+	{
+		#pragma omp parallel for collapse(2)
+		for (int row = 2; row <= m->rows; row++)
+		{
+			for (int col = 2; col <= m->cols; col++)
+			{
+				double val = get(m, row, col);
+				if (val < out[0])
+				{
+					out[0] = val; out[1] = row; out[2] = col;
+				}
+			}
+		}
+	}
+
+	if (diag == true)
+	{
+	#pragma omp parallel for 
+		for (int idx = 2; idx <= m->rows; idx++)
+		{
+			double val = get(m, idx, idx);
+			if (val < out[0])
+			{
+				out[0] = val; out[1] = idx; out[2] = idx;
+			}
+		}
+	}
+	return 0;
+}
+
+int Matrix::max(matrix* m, double* out, const bool& diag)
+{
+	out[0] = get(m, 1, 1); out[1] = 1; out[2] = 1;
+
+	if (diag == false)
+	{
+	#pragma omp parallel for collapse(2)
+		for (int row = 2; row <= m->rows; row++)
+		{
+			for (int col = 2; col <= m->cols; col++)
+			{
+				double val = get(m, row, col);
+				if (val > out[0])
+				{
+					out[0] = val; out[1] = row; out[2] = col;
+				}
+			}
+		}
+	}
+
+	if (diag == true)
+	{
+	#pragma omp parallel for 
+		for (int idx = 2; idx <= m->rows; idx++)
+		{
+			double val = get(m, idx, idx);
+			if (val > out[0])
+			{
+				out[0] = val; out[1] = idx; out[2] = idx;
+			}
+		}
+	}
+	return 0;
+}
+
 Matrix::matrix* Matrix::identity(int size)
 {
 	Matrix::matrix* I = Matrix::newMatrix(size, size);
+#pragma omp parallel for 
 	for (int i = 1; i <= size; i++)
 	{
 		Matrix::set(I, i, i, 1);
@@ -77,6 +253,7 @@ Matrix::matrix* Matrix::identity(int size)
 
 int Matrix::setColumn(matrix* m, matrix* val, int col)
 {
+#pragma omp parallel for 
 	for (int row = 1; row <= m->rows; row++) 
 	{
 		Matrix::set(m, row, col, Matrix::get(val, row, 1));
@@ -86,7 +263,8 @@ int Matrix::setColumn(matrix* m, matrix* val, int col)
 
 int Matrix::setRow(matrix* m, matrix* val, int row)
 {
-	for (int col = 1; col <= m->cols; row++)
+#pragma omp parallel for 
+	for (int col = 1; col <= m->cols; col++)
 	{
 		Matrix::set(m, row, col, Matrix::get(val, 1, col));
 	}
@@ -97,6 +275,8 @@ Matrix::matrix* Matrix::getColumn(matrix* m, int col)
 {
 	if (!m) std::cerr << "matrix not initialized properly";
 	Matrix::matrix* out = Matrix::newMatrix(m->rows, 1);
+
+#pragma omp parallel for 
 	for (int row = 1; row <= m->rows; row++)
 	{
 		Matrix::set(out, row, 1, Matrix::get(m, row, col));
@@ -108,6 +288,8 @@ Matrix::matrix* Matrix::getRow(matrix* m, int row)
 {
 	if (!m) std::cerr << "matrix not initialized properly";
 	Matrix::matrix* out = Matrix::newMatrix(1, m->cols);
+
+#pragma omp parallel for 
 	for (int col = 1; col <= m->cols; col++)
 	{
 		Matrix::set(out, 1, col, Matrix::get(m, row, col));
@@ -115,16 +297,47 @@ Matrix::matrix* Matrix::getRow(matrix* m, int row)
 	return out;
 }
 
+Matrix::matrix* Matrix::getSub(matrix* m, int d)
+{
+	matrix* out = newMatrix(m->rows - d + 1, m->cols - d + 1);
+
+#pragma omp parallel for collapse(2)
+	for (int row = d; row <= m->rows; row++)
+	{
+		for (int col = d; col <= m->cols; col++)
+		{
+			set(out, row - d + 1 , col - d + 1, get(m, row, col));
+		}
+	}
+	return out;
+}
+
+int Matrix::setSub(matrix* m, matrix* in)
+{
+	double d = m->rows - in->rows + 1;
+
+#pragma omp parallel for collapse(2)
+	for (int row = d; row <= m->rows; row++)
+	{
+		for (int col = d; col <= m->cols; col++)
+		{
+			set(m, row, col, get(in, row - d + 1, col - d + 1));
+		}
+	}
+	return 0;
+}
+
 
 int Matrix::print(matrix* m)
 {
 	if (!m) return -1;
 	printf("\n\n");
+
 	for (int row = 1; row <= m->rows; row++)
 	{
 		for (int col = 1; col <= m->cols; col++)
 		{
-			printf("%6.3f ", m->data[(row - 1) * m->cols + (col - 1)]);
+			printf("%6.3f ", get(m, row, col));
 		}
 		printf("\n\n");
 	}
@@ -136,11 +349,12 @@ Matrix::matrix* Matrix::transpose(matrix* in)
 	if (!in) std::cerr << "matrix not initialized properly";
 	Matrix::matrix* out = Matrix::newMatrix(in->cols, in->rows);
 
+#pragma omp parallel for collapse(2)
 	for (int row = 1; row <= in->rows; row++)
 	{
 		for (int col = 1; col <= in->cols; col++)
 		{
-			out->data[(col - 1) * out->rows + (row - 1)] = in->data[(row - 1) * in->cols + (col - 1)];
+			set(out, col, row, get(in, row, col));
 		}
 	}
 	return out;
@@ -149,14 +363,16 @@ Matrix::matrix* Matrix::transpose(matrix* in)
 Matrix::matrix* Matrix::sum(matrix* m1 , matrix* m2)
 {
 	if (!m1 || !m2) std::cerr<<"matrix not initialized properly";
-	if (m1->rows == m2->rows && m1->cols == m2->cols) std::cerr << "sum: matrix size mismatch.";;
+	if (m1->rows != m2->rows || m1->cols != m2->cols) std::cerr << "sum: matrix size mismatch.";;
 
 	Matrix::matrix* sum = Matrix::newMatrix(m1->rows, m1->cols);
+
+#pragma omp parallel for collapse(2)
 	for (int row = 1; row <= m1->rows; row++)
 	{
 		for (int col = 1; col <= m1->cols; col++)
 		{
-			sum->data[(row - 1) * m2->cols + (col - 1)] = m1->data[(row - 1) * m1->cols + (col - 1)] + m2->data[(row - 1) * m2->cols + (col - 1)];
+			set(sum, row, col, get(m1, row, col) + get(m2, row, col));
 		}
 	}
 	return sum;
@@ -168,11 +384,13 @@ Matrix::matrix* Matrix::diff(matrix* m1, matrix* m2)
 	if (m1->rows != m2->rows || m1->cols != m2->cols) std::cerr << "Diff:: matrix size mismatch.";;
 
 	Matrix::matrix* diff = Matrix::newMatrix(m1->rows, m1->cols);
+
+#pragma omp parallel for collapse(2)
 	for (int row = 1; row <= m1->rows; row++)
 	{
 		for (int col = 1; col <= m1->cols; col++)
 		{
-			diff->data[(row - 1) * m2->cols + (col - 1)] = m1->data[(row - 1) * m1->cols + (col - 1)] - m2->data[(row - 1) * m2->cols + (col - 1)];
+			set(diff, row, col, get(m1, row, col) - get(m2, row, col));
 		}
 	}
 	return diff;
@@ -184,11 +402,13 @@ Matrix::matrix* Matrix::scalar_prod(matrix* in, double val)
 	if (!in) std::cerr << "matrix not initialized properly";
 
 	Matrix::matrix* out = Matrix::newMatrix(in->rows, in->cols);
+
+#pragma omp parallel for collapse(2)
 	for (int row = 1; row <= in->rows; row++)
 	{
 		for (int col = 1; col <= in->cols; col++)
 		{
-			out->data[(row - 1) * out->cols + (col - 1)] = val * (in->data[(row - 1) * in->cols + (col - 1)]);
+			 set(out, row, col, val * get(in, row, col));
 		}
 	}
 	return out;
@@ -202,7 +422,7 @@ Matrix::matrix* Matrix::power(matrix* A, int k)
 
 	Matrix::matrix* P = Matrix::newMatrix(A->rows, A->cols);
 	*P = *A;
-
+#pragma omp parallel 
 	for(int i = 1; i < k; i++)
 	{
 		P = Matrix::product(A, P);
@@ -217,16 +437,18 @@ Matrix::matrix* Matrix::product(matrix* m1, matrix* m2)
 
 	Matrix::matrix* prod = Matrix::newMatrix(m1->rows, m2->cols);
 
+#pragma omp parallel for collapse(2) 
 	for (int row = 1; row <= m1->rows; row++)
 	{
 		for (int col = 1; col <= m2->cols; col++)
 		{
 			double val = 0.0;
+#pragma omp parallel for reduction(+:val)
 			for (int k = 1; k <= m2->rows; k++)
 			{
-				val += m1->data[(row - 1) * m1->cols + (k - 1)] * m2->data[(k - 1) * m2->cols + (col - 1)];
+				val += get(m1, row, k) * get(m2, k, col);
 			}
-			prod->data[(row - 1) * prod->cols + (col - 1)] = val;
+			set(prod, row, col, val);
 		}
 	}
 	return prod;
@@ -238,11 +460,12 @@ double Matrix::dotProduct(matrix* m1, matrix* m2)
 	if (m1->rows != m2->rows || m1->cols != m2->cols) std::cerr<<"dot product: matrix size mismatch";
 
 	double prod=0;
+#pragma omp parallel for collapse(2) reduction(+:prod)
 	for (int row = 1; row <= m1->rows; row++)
 	{
 		for (int col = 1; col <= m1->cols; col++)
 		{
-			prod += m1->data[(row - 1) * m1->cols + (col - 1)] * m2->data[(row - 1) * m2->cols + (col - 1)];
+			prod += get(m1, row, col) * get(m2, row, col);
 		}
 	}
 	return prod;
@@ -250,20 +473,54 @@ double Matrix::dotProduct(matrix* m1, matrix* m2)
 
 double Matrix::norm(matrix* m)
 {
-	if (!m) std::cerr << "matrix not initialized properly";
-	if (m->rows != 1 && m->cols != 1) std::cerr << "Cannot compute for non-row or non-column matrix";
+	if (!m) std::cerr << "Norm: matrix not initialized properly";
+	if (m->rows != 1 && m->cols != 1) std::cerr << "Norm: cannot compute for non-row or non-column matrix";
 
 	double val=0;
+#pragma omp parallel for collapse(2) reduction(+:val)
 	for (int row = 1; row <= m->rows; row++)
 	{
 		for (int col = 1; col <= m->cols; col++)
 		{
-			val += pow(m->data[(row - 1) * m->cols + (col - 1)], 2);
+			val += pow(get(m, row, col), 2);
 		}
 	}
-	if (val <= 0) { printf("Trivial norm"); return NULL; }
+	if (val <= 0) return 0;
 	return sqrt(val);
 }
+
+double Matrix::trace(matrix* m)
+{
+	if (m->rows != m->cols) std::cerr << "Trace: Not square matrix";
+
+	double val = 0;
+#pragma omp parallel for reduction(+:val)
+
+	for (int row = 1; row <= m->rows; row++)
+	{
+			val += get(m, row, row);
+	}
+	return val;
+}
+
+Matrix::matrix* Matrix::inverse(matrix* A)
+{
+	matrix* out = newMatrix(A->rows, A->cols);
+	return out;
+}
+
+int Matrix::eigendecomposition(matrix* A, matrix* Q, matrix* R)
+{
+	//QR
+	*Q = *Matrix::identity(Q->rows); matrix* Q_f = Matrix::identity(Q->rows);
+	for(int i = 0; i < 30; i++)
+	{
+		Matrix::householder(A, Q, R); *A = *product(R, Q); *Q_f = *product(Q_f, Q);
+	}
+	*Q = *Q_f;
+	return 0;
+}
+
 
 int Matrix::gram_schmidt(matrix* A, matrix* Q, matrix* R)
 {
@@ -271,6 +528,7 @@ int Matrix::gram_schmidt(matrix* A, matrix* Q, matrix* R)
 	if (Q->cols != R->rows || Q->rows != A->rows || Q->cols != A->cols)return -2;
 
 	//Q matrix
+
 	for (int col = 1; col <= A->cols; col++)
 	{
 		matrix* a = Matrix::getColumn(A, col);
@@ -322,30 +580,60 @@ int Matrix::modified_gram_schmidt(matrix* A, matrix* Q, matrix* R)
 	return 0;
 }
 
+Matrix::matrix* Matrix::sgn(matrix* m)
+{
+	matrix* sign = newMatrix(m->rows, m->cols);
+	for (int row = 1; row <= m->rows; row++)
+	{
+		for (int col = 1; col <= m->cols; col++)
+		{
+			double val = get(m, row, col);
+			if (val == 0) set(sign, row, col, 0);
+			else set(sign, row, col, val / abs(val));
+		}
+	}
+	return sign;
+}
+
 int Matrix::householder(matrix* A, matrix* Q, matrix* R)
 {
-	matrix * I = identity(A->rows);
+	if (!A || !Q || !R)return -1;
+	if (Q->cols != R->rows || Q->rows != A->rows || Q->cols != A->cols)return -2;
 
-	int col = 1;
-	matrix* a = getColumn(A, col);
-	int sn = signbit(get(A, 1, col)); 
-	matrix* v = diff(a, scalar_prod(getColumn(I,col), sn*norm(a)));
+	*R = *A;  *Q = *identity(A->rows);
 
-	if (norm(v) != 0)
-	matrix* Qv = newMatrix(Q->rows, Q->cols);
-    matrix* Qv = diff(identity(A->rows), scalar_prod(scalar_prod(product(v, transpose(v)), (1 / norm(v))), 2));
+	for (int col = 1; col < A->cols; col++) {
 
-	*Q = *product(Qv, A);
-
+		matrix* H = identity(A->rows);
+		matrix* a = getColumn(getSub(R, col), 1);
+		matrix* e = newMatrix(a->rows, 1); set(e, 1, 1, 1);
+		double a1 = get(a, 1, 1);
+		matrix* u = sum(a, scalar_prod(e, norm(a) * SGN(a1))); 
+		double u1 = get(u, 1, 1); matrix* v;
+		if (u1 == 0) v = scalar_prod(u, 0);
+		else v = scalar_prod(u, (1 / u1));
+		double vn = norm(v);
+		double beta = (2 / pow(vn, 2));
+		if (vn == 0) { beta = 0;}
+		setSub(H, diff(identity(a->rows), scalar_prod(product(v, transpose(v)), beta)));
+		
+		//update Q and R
+		//get Q
+		*Q = *product(Q, H);
+		//get R
+		*R = *product(H, R);
+	}
 	return 0;
 }
 
 Matrix::matrix* Matrix::diagonal(matrix* m)
 {
 	matrix* out = Matrix::identity(m->rows);
+#pragma omp parallel for 
 	for (int i = 1; i <= m->rows; i++)
 	{
-		Matrix::set(out, i, i, Matrix::get(m, i, i));
+		if(m->cols ==1) Matrix::set(out, i, i, Matrix::get(m, i, 1));
+		else Matrix::set(out, i, i, Matrix::get(m, i, i));
 	}
 	return out;
 }
@@ -353,6 +641,7 @@ Matrix::matrix* Matrix::diagonal(matrix* m)
 Matrix::matrix* Matrix::diagonal_inverse(matrix* m)
 {
 	matrix* out = Matrix::identity(m->rows);
+#pragma omp parallel for
 	for (int i = 1; i <= m->rows; i++)
 	{
 		double val = Matrix::get(m, i, i);
@@ -370,16 +659,15 @@ int Matrix::solver(matrix* A, matrix* b, matrix* x)
 	//QR decomp of A
 	matrix* Q = newMatrix(A->rows, A->cols);
 	matrix* R = newMatrix(A->cols, A->cols);
-	modified_gram_schmidt(A, Q, R);
+	householder(A, Q, R);
 	matrix* D = diagonal(R);
-
-	print(product(transpose(Q), Q));
 
 	//loop solve Rx = Q_T*b
 	b = product(transpose(Q), b);
 	for (int i = D->rows; i >= 1; i--)
 	{
 		int j; double sum = 0;
+		#pragma omp parallel for reduction(+:sum)
 		for (int j = i+1; j <= D->cols; j++)
 		{
 			sum += get(R, i, j) * get(x, j, 1);
@@ -389,7 +677,97 @@ int Matrix::solver(matrix* A, matrix* b, matrix* x)
 	return 0;
 }
 
+Matrix::matrix* Matrix::skewSymmetric3D(matrix* a)
+{
+	matrix* out = newMatrix(3, 3);
+	double x = 0, y = 0, z = 0; x = get(a, 1, 1); y = get(a, 2, 1); z = get(a, 3, 1);
+	set(out, 1, 1, 0); set(out, 1, 2, -z); set(out, 1, 3, y);
+	set(out, 2, 1, z); set(out, 2, 2, 0); set(out, 2, 3, -x);
+	set(out, 3, 1, -y); set(out, 3, 2, x); set(out, 3, 3, 0);
+	return out;
+}
+
 int Matrix::svd(matrix* m, matrix* U, matrix* S, matrix* VT)
 {
+	return 0;
+}
+
+Matrix::matrix* Registration::principal_axis(Matrix::matrix* data)
+{
+
+	Matrix::matrix* covariance = product(transpose(data), data);
 	
+	//get largetst eigenpair using power method
+	Matrix::matrix* v = Matrix::newMatrix(covariance->rows, 1); set(v, 3, 1, 1); 
+	*v = *product(power(covariance, 5), v); //5 iterations
+	double vn = norm(v);
+
+	if (vn == 0) return v;
+	return scalar_prod(v, (1/vn));
+}
+
+int Registration::getRotations(Matrix::matrix* model, Matrix::matrix* scene, Matrix::matrix* R, Matrix::matrix* R_eta)
+{
+	if (!R || !R_eta) return -1;
+
+	Matrix::matrix* v1 = principal_axis(model);
+	Matrix::matrix* v2 = principal_axis(scene);
+
+	//rotation axis and matrix
+	double theta = acos(MIN(dotProduct(v1, v2), 1.0));
+	Matrix::matrix* axis = product(skewSymmetric3D(v2), v1);
+	double axis_norm = norm(axis);
+	if (axis_norm != 0) *axis = *scalar_prod(axis, axis_norm);
+	Matrix::matrix* s_ax = skewSymmetric3D(axis);
+	
+	//rodrigues formula
+	*R = *sum(Matrix::identity(3), scalar_prod(s_ax, sin(theta)));
+	*R = *sum(R, scalar_prod(power(s_ax,2), 1 - cos(theta)));
+
+	//flipped pcd
+	double eta = theta + M_PI;
+	*R_eta = *sum(Matrix::identity(3), scalar_prod(s_ax, sin(eta)));
+	*R_eta = *sum(R_eta, scalar_prod(power(s_ax, 2), 1 - cos(eta)));
+
+	return 0;
+
+}
+
+
+Matrix::matrix* Registration::alignment(Matrix::matrix* cloud, Matrix::matrix* R, double vertical_shift)
+{
+	Matrix::matrix* out;
+	Matrix::matrix* t = Matrix::newMatrix(3, 1); set(t, 3, 1, vertical_shift);
+	out = Matrix::sum(Matrix::product(R, Matrix::transpose(cloud)), Matrix::product(R, t));
+	return out;
+}
+
+int Registration::coarseAlign(utils::PointCloud* _model, utils::PointCloud* _scene, utils::PointCloud* scene_out)
+{
+	Registration::params Params = Registration::params(1,1,100,-5)  ;
+
+	utils::point staticMean, dynamicMean;
+	shiftByMean(_model, staticMean);
+	shiftByMean(_scene, dynamicMean);
+
+	//matrix form
+	Matrix::matrix* model = Matrix::newMatrix(_model->points.size(), 3);
+	Matrix::matrix* scene = Matrix::newMatrix(_scene->points.size(), 3);
+	Matrix::pcd2mat(_model, model); Matrix::pcd2mat(_scene, scene);
+
+	//get model pcd and downsample and make tree and normals
+
+	//filter scene with statistical outlier filter
+
+	//alignment
+	Matrix::matrix* R = Matrix::identity(3);
+	Matrix::matrix* R_eta = Matrix::identity(3);
+	getRotations(model, scene, R, R_eta);
+
+	Matrix::matrix* aligned_left_up = alignment(scene, R, Params.vertical_shift);
+	Matrix::matrix* aligned_right_up = alignment(scene, R_eta, Params.vertical_shift);
+	Matrix::matrix* aligned_left_down = alignment(scene, R, -Params.vertical_shift);
+	Matrix::matrix* aligned_right_down = alignment(scene, R_eta, -Params.vertical_shift);
+
+	return 0;
 }
