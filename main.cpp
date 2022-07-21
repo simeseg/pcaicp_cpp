@@ -1,5 +1,7 @@
 #define NOMINMAX
 #include "segment_pcd.h"
+#include "geometry.h"
+#include "registration.h"
 
 #pragma warning(disable:4996)
 
@@ -52,8 +54,8 @@ int main()
 	segmentpcd::_clip_bolt_pcd(bboxes, o_image, masks, o_pointclouds);
 	std::cout << o_pointclouds.output_clouds.at(0).points.size()<<"\n";
 	
-
-	//QR solver
+	/*
+	//test QR solver
 	Matrix::matrix* A = Matrix::newMatrix(3, 3);
 	Matrix::matrix* Q = Matrix::newMatrix(3, 3);
 	Matrix::matrix* R = Matrix::newMatrix(3, 3);
@@ -66,16 +68,30 @@ int main()
 	
 	Matrix::eigendecomposition(A, Q, R);
 	print(A); print(Q); print(R);
+	*/
 
 	utils::PointCloud modelcloud;
 	segmentpcd::_LoadPly("image/SurfaceSampledModel.ply", modelcloud);
 
-	utils::computeNormals(&modelcloud, 10);
-
-	//char buffer[50];
-	//int n = sprintf_s(buffer, "image/0_%d_pcd.txt", 0);
+	/*
+	//test triangulation
 	std::ofstream out("image/model.txt");
-	for(auto pt: modelcloud.points) out << pt.x << "," << pt.y << "," << pt.z << "," << pt.nx << "," << pt.ny << "," << pt.nz << "\n";
+	std::vector<mesh::vertex*> cloud; 
+	for (int i = 0; i<modelcloud.points.size() ; i++)
+	{
+		utils::point pt = modelcloud.points.at(i);
+		out << pt.x << "," << pt.y << "," << pt.z << "," << pt.nx << "," << pt.ny << "," << pt.nz << "\n";
+		mesh::vertex v(pt); cloud.push_back(&v);
+		//std::cout << i << "\n";
+	}
+	mesh::TriangleMesh mesh = mesh::TriangleMesh::TriangleMesh();
+	std::vector<std::tuple<int, int, int>*> triangulation = mesh.delaunayTriangulation(cloud);
+	std::cout << "mesh size: " << triangulation.size();
+	*/
+
+	//test alignment
+	utils::PointCloud scene_out; scene_out.points.reserve(o_pointclouds.output_clouds.at(0).points.size());
+	Registration::coarseAlign(&modelcloud, &o_pointclouds.output_clouds.at(0), &scene_out);
 
 	return 1;
 }

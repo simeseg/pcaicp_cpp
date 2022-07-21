@@ -42,7 +42,7 @@ void utils::shiftByMean(utils::PointCloud* cloud, utils::point& mean)
 
 void utils::computeNormals(utils::PointCloud* cloud, const size_t& n)
 {
-	const int num_neighbors = 20;   
+	const int num_neighbors = 20;
 
 	//make a kdtree
 	typedef utils::PointCloudAdaptor my_kd_tree;
@@ -88,7 +88,7 @@ void utils::computeNormals(utils::PointCloud* cloud, const size_t& n)
 		Matrix::matrix* E = Matrix::newMatrix(3, 1); {};
 		
 		Matrix::eigendecomposition(Cov, Q, R);
-		print(Q);
+
 		double minEval[3]; Matrix::min(Cov, minEval, true);
 		Matrix::matrix* norm = getColumn(Q, minEval[2]);
 		
@@ -99,20 +99,27 @@ void utils::computeNormals(utils::PointCloud* cloud, const size_t& n)
 	}
 }
 
-// Minimum Spanning Tree algorithm (Kruskal's algorithm)
-std::vector<WeightedEdge> Kruskal(std::vector<WeightedEdge>& edges,
-	size_t n_vertices) {
-	std::sort(edges.begin(), edges.end(),
-		[](WeightedEdge& e0, WeightedEdge& e1) {
-			return e0.weight_ < e1.weight_;
-		});
+// Make Minimum Spanning Tree(Kruskal's algorithm) to create a simple connected graph for the 
+// set of points. (with no cycles and minimum total edge weight) But since MST is not 
+// sufficiently dense in edges, so we add the remaining edges to the graph to make a Reimannian graph
+// Flipping order based on edge weights (wij = 1 - |ni.nj|) to avoid problem at high curvature eg sharp edges
+// Traverse the MST and flip all points in the node neighbourhood based on the edge weights
+
+std::vector<WeightedEdge> Kruskal(std::vector<WeightedEdge>& edges, size_t n_vertices) 
+{
+	std::sort(edges.begin(), edges.end(), [](WeightedEdge& e0, WeightedEdge& e1){return e0.weight < e1.weight;});
+
 	DisjointSet disjoint_set(n_vertices);
+
 	std::vector<WeightedEdge> mst;
-	for (size_t eidx = 0; eidx < edges.size(); ++eidx) {
-		size_t set0 = disjoint_set.Find(edges[eidx].v0_);
-		size_t set1 = disjoint_set.Find(edges[eidx].v1_);
-		if (set0 != set1) {
-			mst.push_back(edges[eidx]);
+
+	for (size_t eidx = 0; eidx < edges.size(); ++eidx) 
+	{
+		size_t set0 = disjoint_set.Find(edges[eidx].v0);
+		size_t set1 = disjoint_set.Find(edges[eidx].v1);
+		if (set0 != set1) 
+		{
+			mst.push_back(edges.at(eidx));
 			disjoint_set.Union(set0, set1);
 		}
 	}
@@ -121,9 +128,12 @@ std::vector<WeightedEdge> Kruskal(std::vector<WeightedEdge>& edges,
 
 void utils::orientNormals(utils::PointCloud* cloud)
 {
-	//breadth first search or kruskal algorithm
-	
+	//depth first search 
+	//make edges
+	//make Euclidean MST with distance weights
+	//add remaining edges to the graph
 
+	std::vector<WeightedEdge> mst;
 }
 
 void Matrix::pcd2mat(utils::PointCloud* cloud, Matrix::matrix* mat)
@@ -689,85 +699,5 @@ Matrix::matrix* Matrix::skewSymmetric3D(matrix* a)
 
 int Matrix::svd(matrix* m, matrix* U, matrix* S, matrix* VT)
 {
-	return 0;
-}
-
-Matrix::matrix* Registration::principal_axis(Matrix::matrix* data)
-{
-
-	Matrix::matrix* covariance = product(transpose(data), data);
-	
-	//get largetst eigenpair using power method
-	Matrix::matrix* v = Matrix::newMatrix(covariance->rows, 1); set(v, 3, 1, 1); 
-	*v = *product(power(covariance, 5), v); //5 iterations
-	double vn = norm(v);
-
-	if (vn == 0) return v;
-	return scalar_prod(v, (1/vn));
-}
-
-int Registration::getRotations(Matrix::matrix* model, Matrix::matrix* scene, Matrix::matrix* R, Matrix::matrix* R_eta)
-{
-	if (!R || !R_eta) return -1;
-
-	Matrix::matrix* v1 = principal_axis(model);
-	Matrix::matrix* v2 = principal_axis(scene);
-
-	//rotation axis and matrix
-	double theta = acos(MIN(dotProduct(v1, v2), 1.0));
-	Matrix::matrix* axis = product(skewSymmetric3D(v2), v1);
-	double axis_norm = norm(axis);
-	if (axis_norm != 0) *axis = *scalar_prod(axis, axis_norm);
-	Matrix::matrix* s_ax = skewSymmetric3D(axis);
-	
-	//rodrigues formula
-	*R = *sum(Matrix::identity(3), scalar_prod(s_ax, sin(theta)));
-	*R = *sum(R, scalar_prod(power(s_ax,2), 1 - cos(theta)));
-
-	//flipped pcd
-	double eta = theta + M_PI;
-	*R_eta = *sum(Matrix::identity(3), scalar_prod(s_ax, sin(eta)));
-	*R_eta = *sum(R_eta, scalar_prod(power(s_ax, 2), 1 - cos(eta)));
-
-	return 0;
-
-}
-
-
-Matrix::matrix* Registration::alignment(Matrix::matrix* cloud, Matrix::matrix* R, double vertical_shift)
-{
-	Matrix::matrix* out;
-	Matrix::matrix* t = Matrix::newMatrix(3, 1); set(t, 3, 1, vertical_shift);
-	out = Matrix::sum(Matrix::product(R, Matrix::transpose(cloud)), Matrix::product(R, t));
-	return out;
-}
-
-int Registration::coarseAlign(utils::PointCloud* _model, utils::PointCloud* _scene, utils::PointCloud* scene_out)
-{
-	Registration::params Params = Registration::params(1,1,100,-5)  ;
-
-	utils::point staticMean, dynamicMean;
-	shiftByMean(_model, staticMean);
-	shiftByMean(_scene, dynamicMean);
-
-	//matrix form
-	Matrix::matrix* model = Matrix::newMatrix(_model->points.size(), 3);
-	Matrix::matrix* scene = Matrix::newMatrix(_scene->points.size(), 3);
-	Matrix::pcd2mat(_model, model); Matrix::pcd2mat(_scene, scene);
-
-	//get model pcd and downsample and make tree and normals
-
-	//filter scene with statistical outlier filter
-
-	//alignment
-	Matrix::matrix* R = Matrix::identity(3);
-	Matrix::matrix* R_eta = Matrix::identity(3);
-	getRotations(model, scene, R, R_eta);
-
-	Matrix::matrix* aligned_left_up = alignment(scene, R, Params.vertical_shift);
-	Matrix::matrix* aligned_right_up = alignment(scene, R_eta, Params.vertical_shift);
-	Matrix::matrix* aligned_left_down = alignment(scene, R, -Params.vertical_shift);
-	Matrix::matrix* aligned_right_down = alignment(scene, R_eta, -Params.vertical_shift);
-
 	return 0;
 }

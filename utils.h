@@ -36,6 +36,18 @@ namespace utils
 	void computeNormals(utils::PointCloud* cloud, const size_t& n);
 	void orientNormals(utils::PointCloud* cloud);
 
+	//tree struct
+	struct kdtree {
+		utils::PointCloud* _cloud;
+		int _n = 1;
+		utils::PointCloudAdaptor pointcloudAdaptor(3, utils::PointCloud* _cloud, _n);
+		kdtree(utils::PointCloud* cloud, const int& n) :_cloud(cloud), _n(n) {
+			//make a kdtree
+			utils::PointCloudAdaptor pointcloudAdaptor(3, *cloud, n);
+			pointcloudAdaptor.index->buildIndex();
+		}
+	};
+
 	//knn adaptor 
 	struct PointCloudAdaptor
 	{
@@ -99,6 +111,7 @@ namespace utils
 			if (x != parent_[x]) {
 				parent_[x] = Find(parent_[x]);
 			}
+			return parent_[x];
 		}
 
 		void Union(size_t x, size_t y)
@@ -113,11 +126,11 @@ namespace utils
 
 	struct WeightedEdge
 	{
-		size_t v0_;
-		size_t v1_;
-		double weight_;
+		size_t v0;
+		size_t v1;
+		double weight;
 		WeightedEdge(size_t v0, size_t v1, double weight)
-			:v0_(v0), v1_(v1), weight_(weight){}
+			:v0(v0), v1(v1), weight(weight){}
 	};
 }
  
@@ -204,25 +217,3 @@ namespace Matrix
 	
 }
 
-namespace Registration
-{
-	struct params {
-		double dist = 1.0;
-		bool mode = 1;
-		int iterations = 100;
-		double vertical_shift = -5.0;
-		params(double _dist, bool _mode, int _iterations, double _vertical_shift) : 
-			dist(_dist), mode(_mode), iterations(_iterations), vertical_shift(_vertical_shift){}
-		
-	};
-
-	Matrix::matrix* principal_axis(Matrix::matrix* data);
-
-	int getRotations(Matrix::matrix* model, Matrix::matrix* scene, Matrix::matrix* R, Matrix::matrix* R_eta);
-
-	Matrix::matrix* alignment(Matrix::matrix* cloud, Matrix::matrix* R, double vertical_shift);
-
-	int coarseAlign(utils::PointCloud* model, utils::PointCloud* scene, utils::PointCloud* scene_out);
-
-	
-}

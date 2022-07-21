@@ -1,6 +1,6 @@
+#pragma warning(disable:26451)
 #include "utils.h"
 #include "segment_pcd.h"
-
 #include "include/happly.h"
 #define STB_IMAGE_IMPLEMENTATION 
 #include "include/stb_image.h"
@@ -127,8 +127,8 @@ BOOL segmentpcd::_LoadPly(char const* i_strPlyPath, utils::PointCloud& o_PointCl
 	o_PointCloud.points = std::vector<utils::point>(vecPos.size());
 	o_PointCloud.size = o_PointCloud.points.size();
 
-#pragma omp parallel for
-	for (int i = 0; i < o_PointCloud.size; i++)
+
+	for (int i = 0; i < o_PointCloud.points.size(); i++)
 	{
 		o_PointCloud.points.at(i).x = vecPos.at(i)[0];
 		o_PointCloud.points.at(i).y = vecPos.at(i)[1];
