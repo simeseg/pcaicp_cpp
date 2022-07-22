@@ -91,7 +91,8 @@ int main()
 
 	//test alignment
 	utils::PointCloud scene_out; scene_out.points.reserve(o_pointclouds.output_clouds.at(0).points.size());
-	Registration::coarseAlign(&modelcloud, &o_pointclouds.output_clouds.at(0), &scene_out);
+	Registration::Align(&modelcloud, &o_pointclouds.output_clouds.at(0), &scene_out);
+
 
 	return 1;
 }

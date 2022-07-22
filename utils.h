@@ -2,11 +2,13 @@
 #define _USE_MATH_DEFINES
 #include <omp.h>
 #include <vector>
+#include <set>
 #include <assert.h>
 #include <cmath>
 #include <iostream>
 #include <numeric>
 #include "include/nanoflann.hpp"
+#include <tuple>
 
 #define SGN(x) (((x)<(0))?(-1):(1))
 #define MAX(a,b) (((a)>(b))?(a):(b))
@@ -31,23 +33,6 @@ namespace utils
 	utils::point operator-(const utils::point& p1, const utils::point& p2);
 	utils::point operator/=(utils::point& p1, const float& f);
 
-	void PointCloud_mean(const utils::PointCloud& pointcloud, utils::point& mean);
-	void shiftByMean(utils::PointCloud* cloud, utils::point& mean);
-	void computeNormals(utils::PointCloud* cloud, const size_t& n);
-	void orientNormals(utils::PointCloud* cloud);
-
-	//tree struct
-	struct kdtree {
-		utils::PointCloud* _cloud;
-		int _n = 1;
-		utils::PointCloudAdaptor pointcloudAdaptor(3, utils::PointCloud* _cloud, _n);
-		kdtree(utils::PointCloud* cloud, const int& n) :_cloud(cloud), _n(n) {
-			//make a kdtree
-			utils::PointCloudAdaptor pointcloudAdaptor(3, *cloud, n);
-			pointcloudAdaptor.index->buildIndex();
-		}
-	};
-
 	//knn adaptor 
 	struct PointCloudAdaptor
 	{
@@ -55,7 +40,6 @@ namespace utils
 		typedef nanoflann::KDTreeSingleIndexAdaptor<metric_t, PointCloudAdaptor, -1> index_t;
 		index_t* index;
 		const utils::PointCloud& pointcloud;
-
 		PointCloudAdaptor(const int dimensions, const utils::PointCloud& pointcloud, const int leaf_size_max = 10) : pointcloud(pointcloud)
 		{
 			assert(pointcloud.points.size() != 0);
@@ -63,21 +47,9 @@ namespace utils
 			index = new index_t(dims, *this, nanoflann::KDTreeSingleIndexAdaptorParams(leaf_size_max));
 			index->buildIndex();
 		}
-		~PointCloudAdaptor()
-		{
-			delete index;
-		}
-
-		inline PointCloudAdaptor& derived() 
-		{
-			return *this;
-		}
-
-		inline size_t kdtree_get_point_count() const
-		{
-			return pointcloud.points.size();
-		}
-
+		~PointCloudAdaptor(){ delete index;}
+		inline PointCloudAdaptor& derived() { return *this;}
+		inline size_t kdtree_get_point_count() const{ return pointcloud.points.size();}
 		inline double kdtree_get_pt(const size_t idx, int dim) const
 		{
 			assert(dim < 3);
@@ -85,13 +57,10 @@ namespace utils
 			if (dim == 1) return pointcloud.points.at(idx).y;
 			if (dim == 2) return pointcloud.points.at(idx).z;
 		}
-
 		template <class BBOX>
-		bool kdtree_get_bbox(BBOX& bbox) const
-		{
-			return true;
-		}
+		bool kdtree_get_bbox(BBOX& bbox) const { return true;}
 	};
+
 
 	// from Open3D
 	struct DisjointSet
@@ -132,6 +101,11 @@ namespace utils
 		WeightedEdge(size_t v0, size_t v1, double weight)
 			:v0(v0), v1(v1), weight(weight){}
 	};
+
+	void PointCloud_mean(const utils::PointCloud& pointcloud, utils::point& mean);
+	void shiftByMean(utils::PointCloud* cloud, utils::point& mean);
+	void computeNormals(utils::PointCloud* cloud, const utils::PointCloudAdaptor& pcadaptor, const size_t& num_neighbors);
+	void orientNormals(utils::PointCloud* cloud);
 }
  
 namespace Matrix
@@ -215,5 +189,8 @@ namespace Matrix
 
 	void pcd2mat(utils::PointCloud* cloud, Matrix::matrix* mat);
 	
+	void euler2rot(Matrix::matrix* euler, Matrix::matrix* rot, Matrix::matrix* t);
+
+	void updateFromEuler(Matrix::matrix* deltaEuler, Matrix::matrix* rot, Matrix::matrix* t);
 }
 

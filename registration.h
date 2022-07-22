@@ -7,7 +7,6 @@
 
 namespace Registration
 {
-	
 
 	struct params {
 		double dist;
@@ -25,11 +24,13 @@ namespace Registration
 		~params(){}
 	};
 
+
 	struct transform {
 		Matrix::matrix* rotation = Matrix::identity(3);
 		Matrix::matrix* translation = Matrix::newMatrix(3, 1); 
 		double fitness = 0;
 		double inlier_rms = 0;
+		int inlier_count = 0;
 		transform(){}
 		transform(Matrix::matrix* rotation, Matrix::matrix* translation): rotation(rotation), translation(translation){}
 		Matrix::matrix* transformation()
@@ -42,31 +43,22 @@ namespace Registration
 		~transform(){}
 	};
 
-	Matrix::matrix* principal_axis(Matrix::matrix* data);
-	int getRotations(Matrix::matrix* model, Matrix::matrix* scene, Matrix::matrix* R, Matrix::matrix* R_eta);
-	Matrix::matrix* alignment(Matrix::matrix* cloud, Matrix::matrix* R, double vertical_shift);
-	int coarseAlign(utils::PointCloud* model, utils::PointCloud* scene, utils::PointCloud* scene_out);
 
 	struct icp {
-		transform update;
-		transform final;
-		Matrix::matrix* _static = Matrix::newMatrix(1,1);
-		Matrix::matrix* _dynamic = Matrix::newMatrix(1, 1);
-		std::vector<std::tuple<int, int>> correspondences;
-		std::vector<int> _static_indexes;
-		std::vector<int> _dynamic_indexes;
 		params P;
+		transform update;
+		Matrix::matrix* _dynamic = Matrix::newMatrix(1, 1);
+		Matrix::matrix* _static = Matrix::newMatrix(1,1);
+		std::vector<std::tuple<int, int, double>> correspondences;  //dynamic id , static id, distance
+		std::vector<int> _static_indexes, _dynamic_indexes;
+		utils::PointCloudAdaptor* tree;                             //tree for the model
 
-		icp(Matrix::matrix* model, Matrix::matrix* scene, const double& dist, bool mode, int iterations, const std::string& loss, transform* transform)
-			:_static(model), _dynamic(scene), final(*transform)
+		icp(Matrix::matrix* model, utils::PointCloudAdaptor* modeltree, Matrix::matrix* scene, const double& dist, bool mode, int iterations, const std::string& loss, transform* transform)
+			:_static(model), _dynamic(scene), update(*transform), tree(modeltree)
 		{
 			P.dist = dist; P.mode = mode; P.iterations = iterations; P.loss = loss;
 			setIndexes();
 
-			//make a kdtree
-			typedef utils::PointCloudAdaptor my_kd_tree;
-			my_kd_tree pointcloudAdaptor(3, *_static, 10);
-			pointcloudAdaptor.index->buildIndex();
 		}
 
 		double kernel(const double& residual,const std::string& loss)
@@ -81,18 +73,24 @@ namespace Registration
 		void setIndexes()
 		{
 			//static cloud
-			_static_indexes.reserve(_static->rows);
+			_static_indexes.resize(_static->cols);
 			std::iota(std::begin(_static_indexes), std::end(_static_indexes), 1);
 
 			//dynamic cloud
-			_dynamic_indexes.reserve(_dynamic->rows);
+			_dynamic_indexes.resize(_dynamic->cols);
 			std::iota(std::begin(_dynamic_indexes), std::end(_dynamic_indexes), 1);
 		}
 		
 		void getCorrespondences();
+		void jacobian1(Matrix::matrix* rot_p, Matrix::matrix* J);
 		void point2point();
 		void point2plane();
 
 		~icp(){}
 	};
+
+	Matrix::matrix* principal_axis(Matrix::matrix* data);
+	int getRotations(Matrix::matrix* model, Matrix::matrix* scene, Matrix::matrix* R, Matrix::matrix* R_eta);
+	Matrix::matrix* alignment(Matrix::matrix* cloud, Matrix::matrix* R, double vertical_shift);
+	int Align(utils::PointCloud* model, utils::PointCloud* scene, utils::PointCloud* scene_out);
 }

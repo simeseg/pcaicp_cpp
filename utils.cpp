@@ -40,30 +40,23 @@ void utils::shiftByMean(utils::PointCloud* cloud, utils::point& mean)
 	for (auto& pt : cloud->points) pt = pt - mean;
 }
 
-void utils::computeNormals(utils::PointCloud* cloud, const size_t& n)
+void utils::computeNormals(utils::PointCloud* cloud, const utils::PointCloudAdaptor& pcadaptor, const size_t& num_neighbors)
 {
-	const int num_neighbors = 20;
 
-	//make a kdtree
-	typedef utils::PointCloudAdaptor my_kd_tree;
-	my_kd_tree pointcloudAdaptor(3, *cloud, n);
-	pointcloudAdaptor.index->buildIndex();
-	
-
-#pragma omp parallel for 
+#pragma omp parallel for
 	for (int i = 0; i < cloud->points.size(); i++) //cloud->points.size(); i++)
 	{
 		//do a knn search
 		utils::point pt = cloud->points.at(i);
 		double query_point[] = { pt.x, pt.y, pt.z };
-		size_t out_indices[num_neighbors];   //change to vertex later
-		double out_distances[num_neighbors]; //change to vertex later
+		std::vector<size_t> out_indices(num_neighbors);     //change to vertex later
+		std::vector<double> out_distances(num_neighbors);   //change to vertex later
 		
 		nanoflann::KNNResultSet<double> resultSet(num_neighbors);
 		resultSet.init(&out_indices[0], &out_distances[0]);
-		pointcloudAdaptor.index->findNeighbors(resultSet, &query_point[0], int(num_neighbors));
+		pcadaptor.index->findNeighbors(resultSet, &query_point[0], int(num_neighbors));
 
-		Matrix::matrix* N = Matrix::newMatrix(num_neighbors, 3);
+		Matrix::matrix* N = Matrix::newMatrix(3, num_neighbors);
 
 		utils::point mean;
 		#pragma omp parallel for
@@ -71,24 +64,24 @@ void utils::computeNormals(utils::PointCloud* cloud, const size_t& n)
 		{
 			mean = mean + cloud->points.at(out_indices[idx - 1]);
 		}
-		mean /= num_neighbors;
+		mean /= (double) num_neighbors;
 
 		#pragma omp parallel for 
 		for (int idx = 1; idx <= num_neighbors; idx++)
 		{
-			Matrix::set(N, idx, 1, cloud->points.at(out_indices[idx-1]).x - mean.x);
-			Matrix::set(N, idx, 2, cloud->points.at(out_indices[idx-1]).y - mean.y);
-			Matrix::set(N, idx, 3, cloud->points.at(out_indices[idx-1]).z - mean.z);
+			Matrix::set(N, 1, idx, cloud->points.at(out_indices[idx-1]).x - mean.x);
+			Matrix::set(N, 2, idx, cloud->points.at(out_indices[idx-1]).y - mean.y);
+			Matrix::set(N, 3, idx, cloud->points.at(out_indices[idx-1]).z - mean.z);
 			//cloud->points.at(out_indices[idx - 1]).nz = 1.0;
 		}
-
-		Matrix::matrix* Cov = Matrix::scalar_prod(Matrix::product(Matrix::transpose(N), N), 1/(double)num_neighbors);
-		Matrix::matrix* Q = Matrix::newMatrix(3, 3); {};
-		Matrix::matrix* R = Matrix::newMatrix(3, 3); {};
-		Matrix::matrix* E = Matrix::newMatrix(3, 1); {};
+	print(N);
+		Matrix::matrix* Cov = Matrix::scalar_prod(Matrix::product(N, Matrix::transpose(N)), 1/(double)num_neighbors);
+		 std::cout << "get cov \n"; 
+		Matrix::matrix* Q = Matrix::newMatrix(3, 3); 
+		Matrix::matrix* R = Matrix::newMatrix(3, 3); 
+		Matrix::matrix* E = Matrix::newMatrix(3, 1); 
 		
 		Matrix::eigendecomposition(Cov, Q, R);
-
 		double minEval[3]; Matrix::min(Cov, minEval, true);
 		Matrix::matrix* norm = getColumn(Q, minEval[2]);
 		
@@ -139,11 +132,11 @@ void utils::orientNormals(utils::PointCloud* cloud)
 void Matrix::pcd2mat(utils::PointCloud* cloud, Matrix::matrix* mat)
 {
 #pragma omp parallel for 
-	for (int i = 0; i < cloud->points.size(); i++) 
+	for (int i = 1; i <= cloud->points.size(); i++) 
 	{
-		Matrix::set(mat, i, 1, cloud->points.at(i).x);
-		Matrix::set(mat, i, 2, cloud->points.at(i).y);
-		Matrix::set(mat, i, 3, cloud->points.at(i).z);
+		Matrix::set(mat, 1, i, cloud->points.at(i-1).x);
+		Matrix::set(mat, 2, i, cloud->points.at(i-1).y);
+		Matrix::set(mat, 3, i, cloud->points.at(i-1).z);
 	}
 }
 
@@ -165,7 +158,7 @@ Matrix::matrix* Matrix::newMatrix(int rows, int cols)
 
 int Matrix::set(matrix* m, int row, int col, double val)
 {
-	if (!m) return -1;
+	if (!m) std::cerr<<"error set function"; return -1;
 	assert(m->data);
 	if (row <= 0 || col <= 0 || row > m->rows || col > m->cols) { return -2; }
 	m->data[(row - 1) * m->cols + (col - 1)] = val;
@@ -182,6 +175,7 @@ double Matrix::get(matrix* m, int row, int col)
 
 int Matrix::min(matrix* m, double* out, const bool& diag)
 {
+	if (!m) std::cerr << "minimum element: bad initialization \n"; return NULL;
 	out[0] = get(m, 1, 1); out[1] = 1; out[2] = 1;
 
 	if (diag == false)
@@ -283,7 +277,7 @@ int Matrix::setRow(matrix* m, matrix* val, int row)
 
 Matrix::matrix* Matrix::getColumn(matrix* m, int col)
 {
-	if (!m) std::cerr << "matrix not initialized properly";
+	if (!m) std::cerr << "getColumn: matrix not initialized properly \n"; return NULL;
 	Matrix::matrix* out = Matrix::newMatrix(m->rows, 1);
 
 #pragma omp parallel for 
@@ -296,7 +290,7 @@ Matrix::matrix* Matrix::getColumn(matrix* m, int col)
 
 Matrix::matrix* Matrix::getRow(matrix* m, int row)
 {
-	if (!m) std::cerr << "matrix not initialized properly";
+	if (!m) std::cerr << "getRow: matrix not initialized properly \n"; return NULL;
 	Matrix::matrix* out = Matrix::newMatrix(1, m->cols);
 
 #pragma omp parallel for 
@@ -309,6 +303,7 @@ Matrix::matrix* Matrix::getRow(matrix* m, int row)
 
 Matrix::matrix* Matrix::getSub(matrix* m, int d)
 {
+	if (!m) std::cerr << "getsub: matrix not initialized properly \n"; return NULL;
 	matrix* out = newMatrix(m->rows - d + 1, m->cols - d + 1);
 
 #pragma omp parallel for collapse(2)
@@ -324,6 +319,8 @@ Matrix::matrix* Matrix::getSub(matrix* m, int d)
 
 int Matrix::setSub(matrix* m, matrix* in)
 {
+	if (!m) std::cerr << "setsub: matrix m not initialized properly \n"; return NULL;
+	if (!m) std::cerr << "setsub: matrix in not initialized properly \n"; return NULL;
 	double d = m->rows - in->rows + 1;
 
 #pragma omp parallel for collapse(2)
@@ -340,14 +337,14 @@ int Matrix::setSub(matrix* m, matrix* in)
 
 int Matrix::print(matrix* m)
 {
-	if (!m) return -1;
+	if (!m) std::cerr << "print error";  return -1;
 	printf("\n\n");
 
 	for (int row = 1; row <= m->rows; row++)
 	{
 		for (int col = 1; col <= m->cols; col++)
 		{
-			printf("%6.3f ", get(m, row, col));
+			printf("%6.4f ", get(m, row, col));
 		}
 		printf("\n\n");
 	}
@@ -356,7 +353,7 @@ int Matrix::print(matrix* m)
 
 Matrix::matrix* Matrix::transpose(matrix* in)
 {
-	if (!in) std::cerr << "matrix not initialized properly";
+	if (!in) std::cerr << "transpose: matrix not initialized properly \n"; //return NULL;
 	Matrix::matrix* out = Matrix::newMatrix(in->cols, in->rows);
 
 #pragma omp parallel for collapse(2)
@@ -372,8 +369,8 @@ Matrix::matrix* Matrix::transpose(matrix* in)
 
 Matrix::matrix* Matrix::sum(matrix* m1 , matrix* m2)
 {
-	if (!m1 || !m2) std::cerr<<"matrix not initialized properly";
-	if (m1->rows != m2->rows || m1->cols != m2->cols) std::cerr << "sum: matrix size mismatch.";;
+	if (!m1 || !m2) std::cerr<<"sum: matrix not initialized properly \n";  return NULL;
+	if (m1->rows != m2->rows || m1->cols != m2->cols) std::cerr << "sum: matrix size mismatch \n"; return NULL;
 
 	Matrix::matrix* sum = Matrix::newMatrix(m1->rows, m1->cols);
 
@@ -390,8 +387,8 @@ Matrix::matrix* Matrix::sum(matrix* m1 , matrix* m2)
 
 Matrix::matrix* Matrix::diff(matrix* m1, matrix* m2)
 {
-	if (!m1 || !m2) std::cerr << "matrix not initialized properly";
-	if (m1->rows != m2->rows || m1->cols != m2->cols) std::cerr << "Diff:: matrix size mismatch.";;
+	if (!m1 || !m2) std::cerr << "Diff: matrix not initialized properly \n";  return NULL;
+	if (m1->rows != m2->rows || m1->cols != m2->cols) std::cerr << "Diff: matrix size mismatch \n";  return NULL;
 
 	Matrix::matrix* diff = Matrix::newMatrix(m1->rows, m1->cols);
 
@@ -409,7 +406,7 @@ Matrix::matrix* Matrix::diff(matrix* m1, matrix* m2)
 
 Matrix::matrix* Matrix::scalar_prod(matrix* in, double val)
 {
-	if (!in) std::cerr << "matrix not initialized properly";
+	if (!in) std::cerr << "scalar product: matrix not initialized properly \n"; return NULL;
 
 	Matrix::matrix* out = Matrix::newMatrix(in->rows, in->cols);
 
@@ -426,8 +423,8 @@ Matrix::matrix* Matrix::scalar_prod(matrix* in, double val)
 
 Matrix::matrix* Matrix::power(matrix* A, int k)
 {
-	if (!A)std::cerr << "Power: matrix not properly initialized";
-	if (k < 0) std::cerr << "negative exponent"; 
+	if (!A)std::cerr << "Power: matrix not properly initialized \n"; // return NULL;
+	if (k < 0) std::cerr << "negative exponent";  return NULL;
 	if (k == 0) return Matrix::identity(A->rows);
 
 	Matrix::matrix* P = Matrix::newMatrix(A->rows, A->cols);
@@ -442,8 +439,8 @@ Matrix::matrix* Matrix::power(matrix* A, int k)
 
 Matrix::matrix* Matrix::product(matrix* m1, matrix* m2)
 {
-	if (!m1||!m2) std::cerr << "matrix not initialized properly";
-	if (m1->cols != m2->rows) std::cerr << "product: matrix size mismatch";
+	if (!m1||!m2) std::cerr << "product: matrix not initialized properly \n";
+	if (m1->cols != m2->rows) std::cerr << "product: matrix size mismatch \n";  
 
 	Matrix::matrix* prod = Matrix::newMatrix(m1->rows, m2->cols);
 
@@ -466,8 +463,8 @@ Matrix::matrix* Matrix::product(matrix* m1, matrix* m2)
 
 double Matrix::dotProduct(matrix* m1, matrix* m2)
 {
-	if (!m1 || !m2) std::cerr << "matrix not initialized properly";
-	if (m1->rows != m2->rows || m1->cols != m2->cols) std::cerr<<"dot product: matrix size mismatch";
+	if (!m1 || !m2) std::cerr << "dotProduct: matrix not initialized properly \n";  return NULL;
+	if (m1->rows != m2->rows || m1->cols != m2->cols) std::cerr<<"dot product: matrix size mismatch \n";  return NULL;
 
 	double prod=0;
 #pragma omp parallel for collapse(2) reduction(+:prod)
@@ -483,8 +480,8 @@ double Matrix::dotProduct(matrix* m1, matrix* m2)
 
 double Matrix::norm(matrix* m)
 {
-	if (!m) std::cerr << "Norm: matrix not initialized properly";
-	if (m->rows != 1 && m->cols != 1) std::cerr << "Norm: cannot compute for non-row or non-column matrix";
+	if (!m) std::cerr << "Norm: matrix not initialized properly \n";  return NULL;
+	if (m->rows != 1 && m->cols != 1) std::cerr << "Norm: cannot compute for non-row or non-column matrix \n";  return NULL;
 
 	double val=0;
 #pragma omp parallel for collapse(2) reduction(+:val)
@@ -501,7 +498,7 @@ double Matrix::norm(matrix* m)
 
 double Matrix::trace(matrix* m)
 {
-	if (m->rows != m->cols) std::cerr << "Trace: Not square matrix";
+	if (m->rows != m->cols) std::cerr << "Trace: Not square matrix \n";  return NULL;
 
 	double val = 0;
 #pragma omp parallel for reduction(+:val)
@@ -521,6 +518,7 @@ Matrix::matrix* Matrix::inverse(matrix* A)
 
 int Matrix::eigendecomposition(matrix* A, matrix* Q, matrix* R)
 {
+	if (!A || !Q || !R) std::cerr << "eigendecomposition: bad initialization \n"; return NULL;
 	//QR
 	*Q = *Matrix::identity(Q->rows); matrix* Q_f = Matrix::identity(Q->rows);
 	for(int i = 0; i < 30; i++)
@@ -607,7 +605,7 @@ Matrix::matrix* Matrix::sgn(matrix* m)
 
 int Matrix::householder(matrix* A, matrix* Q, matrix* R)
 {
-	if (!A || !Q || !R)return -1;
+	if (!A || !Q || !R)std::cerr << "householder: bad initialization \n"; return -1;
 	if (Q->cols != R->rows || Q->rows != A->rows || Q->cols != A->cols)return -2;
 
 	*R = *A;  *Q = *identity(A->rows);
@@ -620,6 +618,7 @@ int Matrix::householder(matrix* A, matrix* Q, matrix* R)
 		double a1 = get(a, 1, 1);
 		matrix* u = sum(a, scalar_prod(e, norm(a) * SGN(a1))); 
 		double u1 = get(u, 1, 1); matrix* v;
+        print(R);
 		if (u1 == 0) v = scalar_prod(u, 0);
 		else v = scalar_prod(u, (1 / u1));
 		double vn = norm(v);
@@ -695,6 +694,38 @@ Matrix::matrix* Matrix::skewSymmetric3D(matrix* a)
 	set(out, 2, 1, z); set(out, 2, 2, 0); set(out, 2, 3, -x);
 	set(out, 3, 1, -y); set(out, 3, 2, x); set(out, 3, 3, 0);
 	return out;
+}
+
+void Matrix::euler2rot(Matrix::matrix* euler, Matrix::matrix* rot, Matrix::matrix* t)
+{
+	double alpha = get(euler, 1, 1);
+	matrix* Rx = identity(3); double rx[] = { cos(alpha), sin(alpha), 0, -sin(alpha), cos(alpha), 0, 0, 0, 1 }; Rx->data = rx;
+
+	*rot = *product(rot, Rx);
+	delete Rx, rx;
+
+	double beta = get(euler, 2, 1);
+	matrix* Ry = identity(3); double ry[] = { cos(beta), 0, -sin(beta), 0, 1, 0, sin(beta), 0, cos(beta) }; Ry->data = ry;
+	*rot = *product(rot, Ry);
+	delete Ry, ry;
+
+	double gamma = get(euler, 3, 1);
+	matrix* Rz = identity(3); double rz[] = { cos(gamma), sin(gamma), 0, -sin(gamma), cos(gamma), 0, 0, 0, 1 }; Rz->data = rz;
+	*rot = *product(rot, Rz);
+	delete Rz, rz;
+
+	set(t, 1, 1, get(euler, 4, 1));
+	set(t, 2, 1, get(euler, 5, 1));
+	set(t, 3, 1, get(euler, 6, 1));
+}
+
+void Matrix::updateFromEuler(Matrix::matrix* deltaEuler, Matrix::matrix* rot, Matrix::matrix* t)
+{
+	matrix* deltaR = newMatrix(3, 3); matrix* deltaT = newMatrix(3, 1);
+	euler2rot(deltaEuler, deltaR, deltaT);
+	*rot = *product(deltaR, rot);
+	*t = *sum(product(deltaR, t), deltaT);
+	delete deltaR, deltaT;
 }
 
 int Matrix::svd(matrix* m, matrix* U, matrix* S, matrix* VT)
