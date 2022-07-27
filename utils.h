@@ -1,14 +1,24 @@
 #pragma once
 #define _USE_MATH_DEFINES
-#include <omp.h>
 #include <vector>
 #include <set>
+#include <tuple>
+#include <algorithm>
 #include <assert.h>
 #include <cmath>
 #include <iostream>
+#include <fstream>
+#include <sstream>
+#include <stdint.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <cstdio>
 #include <numeric>
+#include <atlstr.h>
+#include <chrono>
+#include <format>
+#include <omp.h>
 #include "include/nanoflann.hpp"
-#include <tuple>
 
 #define SGN(x) (((x)<(0))?(-1):(1))
 #define MAX(a,b) (((a)>(b))?(a):(b))
@@ -102,10 +112,12 @@ namespace utils
 			:v0(v0), v1(v1), weight(weight){}
 	};
 
+	void writepcd(const std::string& filename, const utils::PointCloud& cloud);
 	void PointCloud_mean(const utils::PointCloud& pointcloud, utils::point& mean);
 	void shiftByMean(utils::PointCloud* cloud, utils::point& mean);
 	void computeNormals(utils::PointCloud* cloud, const utils::PointCloudAdaptor& pcadaptor, const size_t& num_neighbors);
 	void orientNormals(utils::PointCloud* cloud);
+	void statisticalOutlierRemoval(utils::PointCloud* cloud, utils::PointCloud* cloudout, size_t nb_neighbors, double std_ratio);
 }
  
 namespace Matrix
@@ -116,12 +128,19 @@ namespace Matrix
 
 	struct matrix
 	{
-		int rows;
-		int cols;
-		double* data;
-	};
+		int rows=0;
+		int cols=0;
+		std::vector<double> data;
+		//double* data;
+		matrix(int rows, int cols): rows(rows), cols(cols)
+		{
+			if (rows <= 0 || cols <= 0) std::cerr << "matrix size error \n";
+			data.resize((int)(rows * cols)); // = (double*)malloc(rows * cols * sizeof(double));
 
-	matrix* newMatrix(int rows, int cols);
+#pragma omp parallel for
+			for (int i = 0; i < rows * cols; i++) { data.at(i) = (double)0.0; }
+		}
+	};
 
 	int set(matrix* m, int row, int col, double val);
 
@@ -187,7 +206,9 @@ namespace Matrix
 	
 	matrix* skewSymmetric3D(matrix* a);
 
-	void pcd2mat(utils::PointCloud* cloud, Matrix::matrix* mat);
+	void getPosition(utils::PointCloud* cloud, Matrix::matrix* mat);
+
+	void getNormals(utils::PointCloud* cloud, Matrix::matrix* mat);
 	
 	void euler2rot(Matrix::matrix* euler, Matrix::matrix* rot, Matrix::matrix* t);
 

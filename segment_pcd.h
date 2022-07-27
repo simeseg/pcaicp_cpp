@@ -1,23 +1,7 @@
 #pragma once
 #define _CRT_SECURE_NO_WARNINGS
 #include "utils.h"
-#include <math.h>
-#include <atlstr.h>
-#include <iostream>
-#include <fstream>
-#include <sstream>
-#include <algorithm>
-#include <chrono>
-#include <vector>
-#include <stdint.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <cstdio>
-#include <stdlib.h>
-#include <format>
 
-
-//#define M_PI 3.141592653589793238462643383279
 
 namespace segmentpcd
 {

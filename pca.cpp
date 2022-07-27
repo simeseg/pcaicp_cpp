@@ -15,6 +15,4 @@ void align::_shift_by_mean(const utils::PointCloud& in_pointcloud, utils::PointC
 
 void _get_rotation_matrices(const utils::PointCloud& model, const utils::PointCloud& scene, Matrix::matrix* R, Matrix::matrix* R_eta)
 {
-	R = Matrix::newMatrix(4, 4);
-	R_eta = Matrix::newMatrix(4, 4);
 }

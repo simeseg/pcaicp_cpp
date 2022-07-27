@@ -10,16 +10,16 @@ namespace Registration
 
 	struct params {
 		double dist;
-		bool mode;
+		std::string mode;
 		int iterations;
 		double vertical_shift;
 		std::string loss;
 		double k;
 		size_t number_of_correspondences;
 
-		params():dist(1.0), mode(1), iterations(100), vertical_shift(-5.0), loss("l1"), k(1.0), number_of_correspondences(500) {}
-		params(double _dist, bool _mode, int _iterations, double _vertical_shift) :
-			dist(_dist), mode(_mode), iterations(_iterations), vertical_shift(_vertical_shift) {}
+		params():dist(1.0), mode("point"), iterations(100), vertical_shift(-5.0), loss("l1"), k(1.0), number_of_correspondences(500) {}
+		params(double _dist, std::string _mode, int _iterations, double _vertical_shift, std::string _loss) :
+			dist(_dist), mode(_mode), iterations(_iterations), vertical_shift(_vertical_shift), loss(_loss){}
 
 		~params(){}
 	};
@@ -27,7 +27,8 @@ namespace Registration
 
 	struct transform {
 		Matrix::matrix* rotation = Matrix::identity(3);
-		Matrix::matrix* translation = Matrix::newMatrix(3, 1); 
+		Matrix::matrix* translation = new Matrix::matrix(3, 1); 
+		Matrix::matrix* H = Matrix::identity(4);
 		double fitness = 0;
 		double inlier_rms = 0;
 		int inlier_count = 0;
@@ -35,7 +36,6 @@ namespace Registration
 		transform(Matrix::matrix* rotation, Matrix::matrix* translation): rotation(rotation), translation(translation){}
 		Matrix::matrix* transformation()
 		{
-			Matrix::matrix* H = Matrix::identity(4);
 			for(int col = 1; col <= 3; col++) Matrix::setColumn(H, Matrix::getColumn(rotation, col), col);
 			Matrix::setColumn(H, Matrix::getColumn(translation, 1), 4);
 			return H;
@@ -46,19 +46,31 @@ namespace Registration
 
 	struct icp {
 		params P;
-		transform update;
-		Matrix::matrix* _dynamic = Matrix::newMatrix(1, 1);
-		Matrix::matrix* _static = Matrix::newMatrix(1,1);
+		transform* update;
+		Matrix::matrix* _dynamic = new Matrix::matrix(1, 1);
+		Matrix::matrix* _static = new Matrix::matrix(1,1);
+		Matrix::matrix* _normals = new Matrix::matrix(1, 1);
 		std::vector<std::tuple<int, int, double>> correspondences;  //dynamic id , static id, distance
 		std::vector<int> _static_indexes, _dynamic_indexes;
 		utils::PointCloudAdaptor* tree;                             //tree for the model
 
-		icp(Matrix::matrix* model, utils::PointCloudAdaptor* modeltree, Matrix::matrix* scene, const double& dist, bool mode, int iterations, const std::string& loss, transform* transform)
-			:_static(model), _dynamic(scene), update(*transform), tree(modeltree)
+		icp(Matrix::matrix* model, utils::PointCloudAdaptor* modeltree, Matrix::matrix* scene, const double& dist, const std::string& mode, int iterations, const std::string& loss, transform* transform)
+			:_static(model), _dynamic(scene), update(transform), tree(modeltree)
 		{
 			P.dist = dist; P.mode = mode; P.iterations = iterations; P.loss = loss;
 			setIndexes();
+			point2point();
+			*scene = *_dynamic;
+		}
 
+		icp(Matrix::matrix* model, Matrix::matrix* normals, utils::PointCloudAdaptor* modeltree, Matrix::matrix* scene, const double& dist, const std::string& mode, int iterations, const std::string& loss, transform* transform)
+			:_static(model), _normals(normals), _dynamic(scene), update(transform), tree(modeltree)
+		{
+			P.dist = dist; P.mode = mode; P.iterations = iterations; P.loss = loss;
+			setIndexes();
+			if(P.mode == "point") point2point();
+			if (P.mode == "plane") point2plane();
+			*scene = *_dynamic;
 		}
 
 		double kernel(const double& residual,const std::string& loss)
@@ -84,7 +96,9 @@ namespace Registration
 		void getCorrespondences();
 		void jacobian1(Matrix::matrix* rot_p, Matrix::matrix* J);
 		void point2point();
+		void jacobian2(Matrix::matrix* rot_p, Matrix::matrix* normals, Matrix::matrix* J);
 		void point2plane();
+		void updateDynamic(Matrix::matrix* deltaR, Matrix::matrix* deltaT);
 
 		~icp(){}
 	};

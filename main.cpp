@@ -56,15 +56,15 @@ int main()
 	
 	/*
 	//test QR solver
-	Matrix::matrix* A = Matrix::newMatrix(3, 3);
-	Matrix::matrix* Q = Matrix::newMatrix(3, 3);
-	Matrix::matrix* R = Matrix::newMatrix(3, 3);
+	Matrix::matrix* A = new Matrix::matrix(3, 3);
+	Matrix::matrix* Q = new Matrix::matrix(3, 3);
+	Matrix::matrix* R = new Matrix::matrix(3, 3);
 	double val[] = { 2.92, 0.86, -1.15, 0.86, 6.51, 3.32, -1.15, 3.32, 4.57};
 	A->data = val;
 	
-	Matrix::matrix* b = Matrix::newMatrix(3,1); double bval[] = { 2,1,4}; b->data = bval;
-	Matrix::matrix* x = Matrix::newMatrix(3, 1);
-	Matrix::matrix* E = Matrix::newMatrix(3, 1);
+	Matrix::matrix* b = new Matrix::matrix(3,1); double bval[] = { 2,1,4}; b->data = bval;
+	Matrix::matrix* x = new Matrix::matrix(3, 1);
+	Matrix::matrix* E = new Matrix::matrix(3, 1);
 	
 	Matrix::eigendecomposition(A, Q, R);
 	print(A); print(Q); print(R);
