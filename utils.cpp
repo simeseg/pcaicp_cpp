@@ -348,34 +348,33 @@ Matrix::matrix* Matrix::getRow(matrix* m, int row)
 	return out;
 }
 
-Matrix::matrix* Matrix::getSub(matrix* m, int d)
+Matrix::matrix* Matrix::getSub(matrix* m, int r, int c)
 {
 	if (!m) { std::cerr << "getsub: matrix not initialized properly \n"; return NULL; }
-	matrix* out = new matrix(m->rows - d + 1, m->cols - d + 1);
+	matrix* out = new matrix(m->rows - r + 1, m->cols - c + 1);
 
 #pragma omp parallel for collapse(2)
-	for (int row = d; row <= m->rows; row++)
+	for (int row = r; row <= m->rows; row++)
 	{
-		for (int col = d; col <= m->cols; col++)
+		for (int col = c; col <= m->cols; col++)
 		{
-			set(out, row - d + 1 , col - d + 1, get(m, row, col));
+			set(out, row - r + 1 , col - c + 1, get(m, row, col));
 		}
 	}
 	return out;
 }
 
-int Matrix::setSub(matrix* m, matrix* in)
+int Matrix::setSub(matrix* m, matrix* in, int r, int c)
 {
 	if (!m) { std::cerr << "setsub: matrix m not initialized properly \n"; return -1; }
-	if (!m) { std::cerr << "setsub: matrix in not initialized properly \n"; return -1; }
-	double d = m->rows - in->rows + 1;
+	if (in->rows + r -  1> m->rows || in->cols + c - 1> m->cols) { std::cerr << "setsub: matrix cannot be applied \n"; return -1;}
 
 #pragma omp parallel for collapse(2)
-	for (int row = d; row <= m->rows; row++)
+	for (int row = r; row <= m->rows; row++)
 	{
-		for (int col = d; col <= m->cols; col++)
+		for (int col = c; col <= m->cols; col++)
 		{
-			set(m, row, col, get(in, row - d + 1, col - d + 1));
+			set(m, row, col, get(in, row - r + 1, col - c + 1));
 		}
 	}
 	return 0;
@@ -668,7 +667,7 @@ int Matrix::householder(matrix* A, matrix* Q, matrix* R)
 	for (int col = 1; col < A->cols; col++) {
 
 		matrix* H = identity(A->rows);
-		matrix* a = getColumn(getSub(R, col), 1);
+		matrix* a = getColumn(getSub(R, col, col), 1);
 		matrix* e = new matrix(a->rows, 1); set(e, 1, 1, 1);
 		double a1 = get(a, 1, 1);
 		matrix* u = sum(a, scalar_prod(e, norm(a) * SGN(a1))); 
@@ -678,7 +677,7 @@ int Matrix::householder(matrix* A, matrix* Q, matrix* R)
 		double vn = norm(v);
 		double beta = (2 / pow(vn, 2));
 		if (vn == 0) { beta = 0;}
-		setSub(H, diff(identity(a->rows), scalar_prod(product(v, transpose(v)), beta)));
+		setSub(H, diff(identity(a->rows), scalar_prod(product(v, transpose(v)), beta)), a->rows, a->rows);
 		
 		//update Q and R
 		//get Q
@@ -695,7 +694,7 @@ Matrix::matrix* Matrix::diagonal(matrix* m)
 
 	matrix* out = Matrix::identity(m->rows);
 #pragma omp parallel for 
-	for (int i = 1; i <= m->rows; i++)
+	for (int i = 1; i <= MIN(m->rows, m->cols); i++)
 	{
 		if(m->cols ==1) Matrix::set(out, i, i, Matrix::get(m, i, 1));
 		else Matrix::set(out, i, i, Matrix::get(m, i, i));
@@ -786,7 +785,68 @@ void Matrix::updateFromEuler(Matrix::matrix* deltaEuler, Matrix::matrix* rot, Ma
 	delete deltaR, deltaT;
 }
 
-int Matrix::svd(matrix* m, matrix* U, matrix* S, matrix* VT)
+Matrix::matrix* Matrix::givens(matrix* m, int r, int c)
 {
+//returns the matrix that annihialtes the (r,c) element
+	return m;
+}
+
+int Matrix::svd(matrix* A, matrix* U, matrix* S, matrix* VT)
+{
+	//Golub-Kahan SVD
+
+	//kth householder transformation matrix
+	auto hholder = [](matrix* A, matrix* a){
+		matrix* H = identity(A->rows);
+		//matrix* a = getColumn(getSub(A, k, k), 1);
+		matrix* e = new matrix(a->rows, 1); set(e, 1, 1, 1);
+		double a1 = get(a, 1, 1);
+		matrix* u = sum(a, scalar_prod(e, norm(a) * SGN(a1)));
+		double u1 = get(u, 1, 1); matrix* v; 
+		if (u1 == 0) v = scalar_prod(u, 0);
+		else v = scalar_prod(u, (1 / u1));
+		double vn = norm(v);
+		double beta = (2 / pow(vn, 2));
+		if (vn == 0) { beta = 0; }
+		setSub(H, diff(identity(a->rows), scalar_prod(product(v, transpose(v)), beta)), A->rows - a->rows + 1, A->rows - a->rows + 1);
+		return H;
+	};
+
+	//calculate bidiagonal form of A
+	auto bidiagonal = [&](matrix* A, matrix* B, matrix* U, matrix* VT) 
+	{
+		assert(A->rows > A->cols);
+		for (int k = 1; k <= MIN(A->rows, A->cols); k++)
+		{
+			//left hand
+			matrix* b = getColumn(getSub(B, k, k), 1);
+			matrix* Q = hholder(B, b);
+			*U = *product(U, Q);
+			*B = *product(Q, B);
+
+			//right hand
+			if (k <= A->cols - 2)
+			{
+				matrix* BT = transpose(B);
+				matrix* b = getColumn(getSub(BT, k + 1, k), 1);
+				matrix* P = transpose(hholder(BT, b));
+				*VT = *product(P, VT);
+				*B  = *product(B, P);
+				delete BT;
+			}
+		}
+		
+	};
+
+	matrix* B = new matrix(A->rows, A->cols); *B = *A;
+	matrix* Q = identity(A->rows); matrix* PT = identity(A->cols);
+	bidiagonal(A, B, Q, PT);
+	//print(B); print(Q); print(PT); print(product(product(Q, B), PT)); print(product(transpose(B), B));
+	matrix* T = product(transpose(B), B);  //tridiagonal form
+
+	//apply givens right and left
+	for(int i = 1 ; i< i)
+
+
 	return 0;
 }

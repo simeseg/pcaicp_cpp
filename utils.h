@@ -128,13 +128,13 @@ namespace Matrix
 
 	struct matrix
 	{
-		int rows=0;
-		int cols=0;
+		int rows;
+		int cols;
 		std::vector<double> data;
 		//double* data;
 		matrix(int rows, int cols): rows(rows), cols(cols)
 		{
-			if (rows <= 0 || cols <= 0) std::cerr << "matrix size error \n";
+			if (rows <= 0 || cols <= 0) std::cerr << rows<< " "<<cols <<" matrix size error \n";
 			data.resize((int)(rows * cols)); // = (double*)malloc(rows * cols * sizeof(double));
 
 #pragma omp parallel for
@@ -160,9 +160,9 @@ namespace Matrix
 
 	matrix* getRow(matrix* m, int row);
 
-	matrix* getSub(matrix* m, int d);
+	matrix* getSub(matrix* m, int r, int c);
 
-	int setSub(matrix* m, matrix* in);
+	int setSub(matrix* m, matrix* in, int r, int c);
 
 	matrix* sgn(matrix* m);
 
@@ -202,7 +202,7 @@ namespace Matrix
 
 	int solver(matrix* A, matrix* b, matrix* x);
 
-	int svd(matrix* m, matrix* U, matrix* S, matrix* VT);
+	int svd(matrix* A, matrix* U, matrix* S, matrix* VT);
 	
 	matrix* skewSymmetric3D(matrix* a);
 
@@ -213,5 +213,7 @@ namespace Matrix
 	void euler2rot(Matrix::matrix* euler, Matrix::matrix* rot, Matrix::matrix* t);
 
 	void updateFromEuler(Matrix::matrix* deltaEuler, Matrix::matrix* rot, Matrix::matrix* t);
+
+	matrix* givens(matrix* m, int r, int c);
 }
 
