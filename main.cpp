@@ -90,9 +90,24 @@ int main()
 	*/
 
 	//test alignment
-	utils::PointCloud scene_out; scene_out.points.reserve(o_pointclouds.output_clouds.at(0).points.size());
-	Registration::Align(&modelcloud, &o_pointclouds.output_clouds.at(0), &scene_out);
+	//utils::PointCloud scene_out; scene_out.points.reserve(o_pointclouds.output_clouds.at(0).points.size());
+	//Registration::Align(&modelcloud, &o_pointclouds.output_clouds.at(0), &scene_out);
+	
+	Matrix::matrix* A = new Matrix::matrix(5, 4); 
+	
+	//for (int i = 0; i < A->data.size(); i++) { A->data[i] = i + 1; }; 
+	double v[] =   { 0.233859  , 0.35931021, 0.56301704, 0.57726985,
+	                 0.86275737, 0.18188458, 0.01388849, 0.06646617,
+	                 0.78374019, 0.67589892, 0.94830761, 0.06368786,
+	                 0.15459799, 0.00992064, 0.52875481, 0.73840404,
+		             0.62651836, 0.88628484, 0.28516676, 0.41817722};
+	A->data.assign(v, v+20);
 
+	Matrix::matrix* U = new Matrix::matrix(A->rows, A->rows);
+	Matrix::matrix* S = new Matrix::matrix(A->rows, A->cols);
+	Matrix::matrix* V = new Matrix::matrix(A->cols, A->cols);
+	Matrix::svd(A, U, V);
+	//Matrix::householder(A, U, V); print(A); print(U); print(V); print(Matrix::product(U, V));
 
 	return 1;
 }

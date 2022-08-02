@@ -162,6 +162,8 @@ namespace Matrix
 
 	matrix* getSub(matrix* m, int r, int c);
 
+	matrix* getSub(matrix* m, int r, int c, int R, int C);
+
 	int setSub(matrix* m, matrix* in, int r, int c);
 
 	matrix* sgn(matrix* m);
@@ -202,7 +204,7 @@ namespace Matrix
 
 	int solver(matrix* A, matrix* b, matrix* x);
 
-	int svd(matrix* A, matrix* U, matrix* S, matrix* VT);
+	int svd(matrix* A, matrix* U, matrix* VT);
 	
 	matrix* skewSymmetric3D(matrix* a);
 

@@ -358,6 +358,22 @@ Matrix::matrix* Matrix::getSub(matrix* m, int r, int c)
 	{
 		for (int col = c; col <= m->cols; col++)
 		{
+			set(out, row - r + 1, col - c + 1, get(m, row, col));
+		}
+	}
+	return out;
+}
+
+Matrix::matrix* Matrix::getSub(matrix* m, int r, int c, int R, int C)
+{
+	if (!m) { std::cerr << "getsub: matrix not initialized properly \n"; return NULL; }
+	matrix* out = new matrix(R - r + 1, C - c + 1);
+
+#pragma omp parallel for collapse(2)
+	for (int row = r; row <= R; row++)
+	{
+		for (int col = c; col <= C; col++)
+		{
 			set(out, row - r + 1 , col - c + 1, get(m, row, col));
 		}
 	}
@@ -791,18 +807,18 @@ Matrix::matrix* Matrix::givens(matrix* m, int r, int c)
 	return m;
 }
 
-int Matrix::svd(matrix* A, matrix* U, matrix* S, matrix* VT)
+int Matrix::svd(matrix* A, matrix* U, matrix* VT)
 {
 	//Golub-Kahan SVD
 
 	//kth householder transformation matrix
-	auto hholder = [](matrix* A, matrix* a){
+	auto hholder = [](matrix* A, matrix* a) {
 		matrix* H = identity(A->rows);
 		//matrix* a = getColumn(getSub(A, k, k), 1);
 		matrix* e = new matrix(a->rows, 1); set(e, 1, 1, 1);
 		double a1 = get(a, 1, 1);
 		matrix* u = sum(a, scalar_prod(e, norm(a) * SGN(a1)));
-		double u1 = get(u, 1, 1); matrix* v; 
+		double u1 = get(u, 1, 1); matrix* v;
 		if (u1 == 0) v = scalar_prod(u, 0);
 		else v = scalar_prod(u, (1 / u1));
 		double vn = norm(v);
@@ -813,7 +829,7 @@ int Matrix::svd(matrix* A, matrix* U, matrix* S, matrix* VT)
 	};
 
 	//calculate bidiagonal form of A
-	auto bidiagonal = [&](matrix* A, matrix* B, matrix* U, matrix* VT) 
+	auto bidiagonal = [&](matrix* A, matrix* B, matrix* U, matrix* VT)
 	{
 		assert(A->rows > A->cols);
 		for (int k = 1; k <= MIN(A->rows, A->cols); k++)
@@ -831,22 +847,143 @@ int Matrix::svd(matrix* A, matrix* U, matrix* S, matrix* VT)
 				matrix* b = getColumn(getSub(BT, k + 1, k), 1);
 				matrix* P = transpose(hholder(BT, b));
 				*VT = *product(P, VT);
-				*B  = *product(B, P);
+				*B = *product(B, P);
 				delete BT;
 			}
 		}
-		
 	};
 
+	auto givens = [&](int n, int k, double c, double s)
+	{
+		matrix* G = identity(n);
+		set(G, k, k, c); set(G, k, k + 1, s); set(G, k + 1, k, -s); set(G, k + 1, k + 1, c);
+		return G;
+	};
+
+	auto golubKahan = [&](matrix* B, matrix* Q, matrix* P)
+	{
+		//B is square, no zeros on diagonal or superdiagonal
+		int n = B->cols;
+		//trailing 2x2 matrix of BT*B
+		double a = pow(get(B, n - 1, n - 1), 2) + pow(get(B, n - 2, n - 1), 2),
+			b = get(B, n - 1, n - 1) * get(B, n - 1, n),
+			c = b,
+			d = pow(get(B, n, n), 2);
+		//eigenvalues of trailing 2x2 matrix
+		double lambda1 = ((a + d) + sqrt(pow(a, 2) - 2 * a * d + pow(d, 2) + 4 * b * c)) / 2.0;
+		double lambda2 = ((a + d) - sqrt(pow(a, 2) - 2 * a * d + pow(d, 2) + 4 * b * c)) / 2.0;
+		//shift
+		double mu = ((abs(lambda1 - a) < abs(lambda2 - a)) ? lambda1 : lambda2);
+		//chasing the bulge (implicit QR)
+		double alpha = pow(get(B, 1, 1), 2), beta = get(B, 1, 1) * get(B, 1, 2);
+		for (int k = 1; k <= n - 1; k++)
+		{
+			//right
+			double h = hypot(alpha, beta);
+			double c = (double)alpha / h, s = -(double)beta / h;
+			matrix* G = givens(n, k, c, s);
+			*B = *product(B, G);
+			*P = *product(P, G);
+
+			//left
+			alpha = get(B, k, k); beta = get(B, k + 1, k);
+			h = hypot(alpha, beta);
+			c = alpha / h, s = -beta / h; ;
+			G = givens(n, k, c, -s);
+			*B = *product(G, B);
+			*Q = *product(G, Q);
+			if (k <= n - 1) { alpha = get(B, k, k + 1); beta = get(B, k, k + 2); }
+		}
+	};
+
+	//svd
 	matrix* B = new matrix(A->rows, A->cols); *B = *A;
 	matrix* Q = identity(A->rows); matrix* PT = identity(A->cols);
+
+	//get bidiagonal form of A
 	bidiagonal(A, B, Q, PT);
+
+	//remove last (row - col) zero rows
+	*B = *getSub(B, 1, 1, A->cols, A->cols);
+	*Q = *getSub(Q, 1, 1, A->cols, A->cols);
+	*PT = *getSub(PT, 1, 1, A->cols, A->cols);
+	print(B);
+
+	//get diag and superdiag elements only
+	matrix* d = new matrix(B->cols, 1);        //diagonal
+	matrix* f = new matrix(B->cols - 1, 1);    //superdiagonal
+	for (int i = 1; i < B->cols; i++)
+	{
+		set(d, i, 1, get(B, i, i)); set(f, i, 1, get(B, i, i + 1));
+	}
+	set(d, B->cols, 1, get(B, B->cols, B->cols));
+
 	//print(B); print(Q); print(PT); print(product(product(Q, B), PT)); print(product(transpose(B), B));
-	matrix* T = product(transpose(B), B);  //tridiagonal form
 
-	//apply givens right and left
-	for(int i = 1 ; i< i)
+	int q = 1, p = 0; double epsilon = 1e-6; //change to machine epsilon
 
+	while (q < A->cols)
+	{
+		print(B);
+		for (int i = 1; i <= B->cols - 1; i++)
+		{
+			if (abs(get(B, i, i + 1)) <= epsilon * (abs(get(B, i, i)) + abs(get(B, i + 1, i + 1)))) { set(B, i, i + 1, 0); }
+		}
+		// check superdiagonal elements for zero
+		for (int i = 1; i <= B->cols - 1; i++)
+		{
+			if (abs(get(B, i, i + 1)) <= epsilon) { p = i; break; }
+		}
 
+		// check diagonal elements
+		for (int i = B->cols-1; i >= 1; i--)
+		{
+			if (abs(get(B, i, i)) < epsilon && abs(get(B, i + 1, i + 1)) < epsilon) { break; }
+			//if (abs(get(B, i, i)) > epsilon && abs(get(B, i, i + 1)) < epsilon) { q = B->cols - i + 1; }
+		}
+
+		std::cout << q << " " << p << "\n";
+
+		//matrix* B11 = getSub(B, 1, 1, p, p);
+		matrix* B22 = getSub(B, p + 1, p + 1, B->cols - q, B->cols - q) ; 
+		//matrix* B33 = getSub(B, B->cols - q + 1, B->cols - q + 1, B->cols, B->cols);
+		//print(B11); print(B33);
+
+		if (q == B->cols) { break; }
+
+		/*
+		for (int i = p + 1; i < B->cols - q; i++)
+		{
+			if (abs(get(B, i, i)) < epsilon)
+			{
+				double alpha = pow(get(B, 1, 1), 2), beta = get(B, 1, 1) * get(B, 1, 2);
+				for (int k = 1; k < A->cols - i; k++)
+				{
+					//right
+					alpha = get(B, i, i); beta = get(B, i + k, i + k);
+					double h = hypot(alpha, beta);
+					double c = (double)alpha / h, s = -(double)beta / h;
+					matrix* G = givens(B->cols, k, c, -s);
+					*B = *product(B, G);
+					*PT = *product(G, PT);
+				}
+			}
+		}
+		*/
+		{
+				matrix* P = transpose(PT);
+				//matrix* Q22 = getSub(Q, p + 1, p + 1, B->cols - q, B->cols - q);
+				//matrix* P22 = getSub(P, p + 1, p + 1, B->cols - q, B->cols - q);
+				golubKahan(B, Q, P);
+				//setSub(B, B22, p + 1, p + 1);
+				//setSub(Q, Q22, p + 1, p + 1);
+				//setSub(P, P22, p + 1, p + 1);
+				//*PT = *transpose(P);
+		}
+			
+	}
+	print(A); print(B);
+	setSub(A, B, 1, 1);
+	print(A); print(Q); print(PT); print(product(product(Q, B), PT)); 
 	return 0;
 }
