@@ -1,5 +1,8 @@
 #pragma once
+#ifndef UTILS
+#define UTILS
 #include "utils.h"
+#endif //!UTILS
 #include <random>
 #include <string>
 #include <iterator>
@@ -45,7 +48,7 @@ namespace Registration
 
 
 	struct icp {
-		params P;
+		params* P;
 		transform* update;
 		Matrix::matrix* _dynamic = new Matrix::matrix(1, 1);
 		Matrix::matrix* _static = new Matrix::matrix(1,1);
@@ -54,32 +57,30 @@ namespace Registration
 		std::vector<int> _static_indexes, _dynamic_indexes;
 		utils::PointCloudAdaptor* tree;                             //tree for the model
 
-		icp(Matrix::matrix* model, utils::PointCloudAdaptor* modeltree, Matrix::matrix* scene, const double& dist, const std::string& mode, int iterations, const std::string& loss, transform* transform)
-			:_static(model), _dynamic(scene), update(transform), tree(modeltree)
+		icp(Matrix::matrix* model, utils::PointCloudAdaptor* modeltree, Matrix::matrix* scene, Registration::params* params, transform* transform)
+			:_static(model), _dynamic(scene), update(transform), tree(modeltree), P(params)
 		{
-			P.dist = dist; P.mode = mode; P.iterations = iterations; P.loss = loss;
 			setIndexes();
-			point2point();
+			point2point_svd();
 			*scene = *_dynamic;
 		}
 
-		icp(Matrix::matrix* model, Matrix::matrix* normals, utils::PointCloudAdaptor* modeltree, Matrix::matrix* scene, const double& dist, const std::string& mode, int iterations, const std::string& loss, transform* transform)
-			:_static(model), _normals(normals), _dynamic(scene), update(transform), tree(modeltree)
+		icp(Matrix::matrix* model, Matrix::matrix* normals, utils::PointCloudAdaptor* modeltree, Matrix::matrix* scene, Registration::params* params, transform* transform)
+			:_static(model), _normals(normals), _dynamic(scene), update(transform), tree(modeltree), P(params)
 		{
-			P.dist = dist; P.mode = mode; P.iterations = iterations; P.loss = loss;
 			setIndexes();
-			if(P.mode == "point") point2point();
-			if (P.mode == "plane") point2plane();
+			if(P->mode == "point") point2point_svd();
+			if (P->mode == "plane") point2plane();
 			*scene = *_dynamic;
 		}
 
 		double kernel(const double& residual,const std::string& loss)
 		{
 			if (loss == "l1") return 1 / residual;
-			if (loss == "huber") return P.k / MAX(P.k, residual); 
-			if (loss == "cauchy") return 1 / (1 + pow(residual / P.k, 2));
-			if (loss == "gm") return P.k / pow(P.k + pow(residual, 2), 2);
-			if (loss == "tukey") return pow(1.0 - pow(MIN(1.0, abs(residual) / P.k), 2), 2);
+			if (loss == "huber") return P->k / MAX(P->k, residual); 
+			if (loss == "cauchy") return 1 / (1 + pow(residual / P->k, 2));
+			if (loss == "gm") return P->k / pow(P->k + pow(residual, 2), 2);
+			if (loss == "tukey") return pow(1.0 - pow(MIN(1.0, abs(residual) / P->k), 2), 2);
 		}
 		
 		void setIndexes()
@@ -93,9 +94,11 @@ namespace Registration
 			std::iota(std::begin(_dynamic_indexes), std::end(_dynamic_indexes), 1);
 		}
 		
-		void getCorrespondences();
+		void getCorrespondences();		
+		void umeyama(Matrix::matrix* A, Matrix::matrix* B, Matrix::matrix* R, Matrix::matrix* t);
 		void jacobian1(Matrix::matrix* rot_p, Matrix::matrix* J);
 		void point2point();
+		void point2point_svd();
 		void jacobian2(Matrix::matrix* rot_p, Matrix::matrix* normals, Matrix::matrix* J);
 		void point2plane();
 		void updateDynamic(Matrix::matrix* deltaR, Matrix::matrix* deltaT);

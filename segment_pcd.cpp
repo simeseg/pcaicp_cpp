@@ -1,5 +1,4 @@
-#pragma warning(disable:26451)
-#include "utils.h"
+#pragma warning(disable:26451) 
 #include "segment_pcd.h"
 #include "include/happly.h"
 #define STB_IMAGE_IMPLEMENTATION 
@@ -338,8 +337,8 @@ void segmentpcd::_get_masks(segmentpcd::_masks& masks, size_t& num_bboxes, int& 
 	for (int id = 0; id < num_bboxes; id++)
 	{
 		segmentpcd::Image mask;
-		char buffer[50];
-		int n = sprintf_s(buffer, "image/%d_%d_mask.bmp", scene_id, id);
+		char buffer[250];
+		int n = sprintf_s(buffer, "D:/PointCloudSegmentation/Dataset/New_data/Wolfson_lab/1.Success_1st_Mask/%d_%d_mask.bmp", scene_id, id);
 		std::cout << buffer<<"\n";
 		segmentpcd::_read_mask(buffer, mask);
 		masks.masks.push_back(mask);

@@ -1,7 +1,8 @@
 #pragma once
-#include <vector>
-#include <algorithm>
+#ifndef UTILS
+#define UTILS
 #include "utils.h"
+#endif //!UTILS
 
 #define INIT_VERTICES_COUNT 6
 #define INIT_FACES_COUNT 8
@@ -9,14 +10,20 @@
 
 namespace mesh {
 
-	struct vertex:utils::point {
+	struct point
+	{
+		double x = 0, y = 0, z = 0;
+		double nx = 0, ny = 0, nz = 0;
+	};
+
+	struct vertex:point {
 		size_t index =0;
 		double x, y, z;
 		bool isVisited = false;
 		bool isAuxiliary = false;
 
 		vertex(const double& x, const double& y, const double& z) : index(generateRunningId()), x(x), y(y), z(z){}
-		vertex(utils::point pt): index(generateRunningId()), x(pt.x), y(pt.y), z(pt.z){}
+		vertex(point pt): index(generateRunningId()), x(pt.x), y(pt.y), z(pt.z){}
 		vertex(const double& x, const double& y, const double& z, bool isAuxiliary) : index(generateRunningId()), x(x), y(y), z(z), isAuxiliary(isAuxiliary){}
 		vertex(vertex* v, const double& lengthAfterProjection): index(v->index), isVisited(v->isVisited), isAuxiliary(v->isAuxiliary)
 		{

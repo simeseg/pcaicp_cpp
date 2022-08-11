@@ -5,11 +5,16 @@
 
 #pragma warning(disable:4996)
 
+
 int main()
 {
+	int scene_id = 61;
+	
 	//read rgb image
 	segmentpcd::Image o_image;
-	segmentpcd::_LoadRGBImage("image/0_mask_out.jpg", o_image);
+	char rgb_buffer[250];
+	sprintf_s(rgb_buffer, "D:/PointCloudSegmentation/Dataset/New_data/Wolfson_lab/1.Success_1st_Mask/%d_mask_out.jpg", scene_id);
+	segmentpcd::_LoadRGBImage(rgb_buffer, o_image);
 	
 
 	//read ply file
@@ -36,24 +41,36 @@ int main()
 
 	//input and output coordinate type
 	utils::PointCloud pointcloud;
-	segmentpcd::_LoadPly("image/PointCloud0.ply", pointcloud);
+	char pcd_buffer[250];
+	sprintf_s(pcd_buffer, "D:/PointCloudSegmentation/Dataset/New_data/Wolfson_lab/220613_3D/PointCloud%d.ply", scene_id);
+	segmentpcd::_LoadPly(pcd_buffer, pointcloud);
 
 	segmentpcd::_project(pointcloud, calibdata, o_image);
 	//std::cout << o_image.pixels.at(200).r << "  "<< o_image.pixels.at(200).Xc;
 
 	segmentpcd::Bboxes bboxes; 
-	segmentpcd::_readBboxes("image/0_mask_out.txt", bboxes);
+	char bbox_buffer[250];
+	sprintf_s(bbox_buffer, "D:/PointCloudSegmentation/Dataset/New_data/Wolfson_lab/1.Success_1st_Mask/%d_mask_out.txt", scene_id);
+	segmentpcd::_readBboxes(bbox_buffer, bboxes);
 	//std::cout << bboxes.bboxes.size() << " " << bboxes.num;
 
 	segmentpcd::_masks masks;
-	int scene_id = 0;
+	
 	segmentpcd::_get_masks(masks, bboxes.num, scene_id);
 	std::cout << masks.masks.at(0).pixels.at(0).b;
 
 	segmentpcd::_outputClouds o_pointclouds;
 	segmentpcd::_clip_bolt_pcd(bboxes, o_image, masks, o_pointclouds);
 	std::cout << o_pointclouds.output_clouds.at(0).points.size()<<"\n";
-	
+
+	utils::PointCloud modelcloud;
+	segmentpcd::_LoadPly("D:/PointCloudSegmentation/BoltData/SurfaceSampledModel.ply", modelcloud);
+
+	//test alignment
+	utils::PointCloud scene_out; scene_out.points.reserve(o_pointclouds.output_clouds.at(0).points.size());
+	Registration::Align(&modelcloud, &o_pointclouds.output_clouds.at(0), &scene_out);
+
+
 	/*
 	//test QR solver
 	Matrix::matrix* A = new Matrix::matrix(3, 3);
@@ -68,12 +85,7 @@ int main()
 	
 	Matrix::eigendecomposition(A, Q, R);
 	print(A); print(Q); print(R);
-	*/
-
-	utils::PointCloud modelcloud;
-	segmentpcd::_LoadPly("image/SurfaceSampledModel.ply", modelcloud);
-
-	/*
+	
 	//test triangulation
 	std::ofstream out("image/model.txt");
 	std::vector<mesh::vertex*> cloud; 
@@ -87,27 +99,38 @@ int main()
 	mesh::TriangleMesh mesh = mesh::TriangleMesh::TriangleMesh();
 	std::vector<std::tuple<int, int, int>*> triangulation = mesh.delaunayTriangulation(cloud);
 	std::cout << "mesh size: " << triangulation.size();
-	*/
 
-	//test alignment
-	//utils::PointCloud scene_out; scene_out.points.reserve(o_pointclouds.output_clouds.at(0).points.size());
-	//Registration::Align(&modelcloud, &o_pointclouds.output_clouds.at(0), &scene_out);
-	
-	Matrix::matrix* A = new Matrix::matrix(5, 4); 
+	Matrix::matrix* A = new Matrix::matrix(6, 6); 
+	//Matrix::matrix* A = new Matrix::matrix(3, 3);
 	
 	//for (int i = 0; i < A->data.size(); i++) { A->data[i] = i + 1; }; 
-	double v[] =   { 0.233859  , 0.35931021, 0.56301704, 0.57726985,
-	                 0.86275737, 0.18188458, 0.01388849, 0.06646617,
-	                 0.78374019, 0.67589892, 0.94830761, 0.06368786,
-	                 0.15459799, 0.00992064, 0.52875481, 0.73840404,
-		             0.62651836, 0.88628484, 0.28516676, 0.41817722};
-	A->data.assign(v, v+20);
+	double v[] =   { 2, 5, 4, 6, 0, 8,
+					 7, 4, 3, 3, 1, 8,
+					 0, 2, 7, 0, 3, 1,
+					 1, 4, 7, 1, 2, 0,
+					 3, 9, 4, 4, 0, 4,
+					 3, 7, 3, 5, 4, 2 };
+
+	double v2[] = {  2, 5, 4, 
+					 7, 4, 3, 
+					 0, 2, 7,  
+					 1, 4, 7, 
+					 3, 9, 4,
+					 3, 7, 3 };
+
+	double v3[] = { 1, 1, 0, 0, 1e-20, 1e-20, 0,0, 1e-40 };
+
+	A->data.assign(v, v+36);
 
 	Matrix::matrix* U = new Matrix::matrix(A->rows, A->rows);
 	Matrix::matrix* S = new Matrix::matrix(A->rows, A->cols);
 	Matrix::matrix* V = new Matrix::matrix(A->cols, A->cols);
 	Matrix::svd(A, U, V);
+	std::cout<<Matrix::determinant(A);
 	//Matrix::householder(A, U, V); print(A); print(U); print(V); print(Matrix::product(U, V));
+	*/
+
 
 	return 1;
 }
+

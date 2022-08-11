@@ -1,8 +1,9 @@
 #pragma once
 #define _CRT_SECURE_NO_WARNINGS
-#include <math.h>
-#include <iostream>
+#ifndef UTILS
+#define UTILS
 #include "utils.h"
+#endif //!UTILS
 
 namespace align
 {

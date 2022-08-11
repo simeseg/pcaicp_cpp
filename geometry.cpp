@@ -339,3 +339,4 @@ double mesh::TriangleMesh::determinant(double matrix[])
     // adjust result based on float number accuracy, otherwise causing deadloop
     return abs(determinant) <= DBL_EPSILON ? 0 : determinant;
 }
+

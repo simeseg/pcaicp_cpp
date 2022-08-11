@@ -1,4 +1,6 @@
 #include "utils.h"
+#include <valarray>
+#include <forward_list>
 
 using namespace utils;
 
@@ -179,6 +181,49 @@ void utils::statisticalOutlierRemoval(utils::PointCloud* cloud, utils::PointClou
 
 }
 
+int utils::normalinversion(utils::PointCloud* cloud)
+{
+
+	using value_type = double;
+
+	std::list<std::forward_list<double>> points_;
+	for(auto& pt:cloud->points)
+	{
+		std::forward_list<double> in{ pt.x, pt.y, pt.z, (pow(pt.x, 2) + pow(pt.y, 2) + pow(pt.z, 2)) };
+		points_.push_back(in);
+	}
+
+	//using value_type = double;
+	//using point = std::forward_list< value_type >;
+	//using points = std::forward_list< point >;
+
+	//value_type const eps = std::numeric_limits< value_type >::epsilon();
+
+	// define and setup QH class instance
+	//using quick_hull_type = quick_hull< typename points::const_iterator >;
+	//quick_hull_type quick_hull_(4, eps); // (1)
+	//quick_hull_.add_points(std::cbegin(points_), std::cend(points_)); // (2)
+
+
+
+	int i;
+	for (i = 0; i < cloud->points.size(); i++)
+	{
+		double d = sqrt(pow(cloud->points.at(i).x, 2) + pow(cloud->points.at(i).y, 2));
+		utils::point* temp = new utils::point; 
+		temp->x = cloud->points.at(i).x - d * cloud->points.at(i).nx; 
+		temp->y = cloud->points.at(i).y - d * cloud->points.at(i).ny;
+		double d_temp = sqrt(pow(temp->x, 2) + pow(temp->y, 2));
+		if (d_temp > d) 
+		{
+			cloud->points.at(i).nx = -1 * cloud->points.at(i).nx; 
+			cloud->points.at(i).ny = -1 * cloud->points.at(i).ny; 
+			cloud->points.at(i).nz = -1 * cloud->points.at(i).nz;
+		}
+	}
+	return 0;
+}
+
 
 void Matrix::getPosition(utils::PointCloud* cloud, Matrix::matrix* mat)
 {
@@ -206,7 +251,7 @@ void Matrix::getNormals(utils::PointCloud* cloud, Matrix::matrix* mat)
 int Matrix::set(matrix* m, int row, int col, double val)
 {
 	if (!m) { std::cerr << "error set function \n"; return -1; }
-	assert(m->data);
+	//assert(m->data);
 	if (row <= 0 || col <= 0 || row > m->rows || col > m->cols) { return -2; }
 	m->data.at((row - 1) * m->cols + (col - 1)) = val;
 	return 0;
@@ -215,7 +260,7 @@ int Matrix::set(matrix* m, int row, int col, double val)
 double Matrix::get(matrix* m, int row, int col)
 {
 	if (!m) { return -1; }
-	assert(m->data);
+	//assert(m->data);
 	if (row <= 0 || col <= 0 || row > m->rows || col > m->cols) { return -2; }
 	return m->data.at((row - 1) * m->cols + (col - 1));
 }
@@ -383,12 +428,12 @@ Matrix::matrix* Matrix::getSub(matrix* m, int r, int c, int R, int C)
 int Matrix::setSub(matrix* m, matrix* in, int r, int c)
 {
 	if (!m) { std::cerr << "setsub: matrix m not initialized properly \n"; return -1; }
-	if (in->rows + r -  1> m->rows || in->cols + c - 1> m->cols) { std::cerr << "setsub: matrix cannot be applied \n"; return -1;}
+	if (in->rows + r -  1> m->rows || in->cols + c - 1> m->cols) { std::cerr <<r<<" "<<c<<" "<< m->rows << " " << m->cols << " " << in->rows << " " << in->cols << " setsub: matrix cannot be applied \n"; return -1; }
 
 #pragma omp parallel for collapse(2)
-	for (int row = r; row <= m->rows; row++)
+	for (int row = r; row <= in->rows + r - 1; row++)
 	{
-		for (int col = c; col <= m->cols; col++)
+		for (int col = c; col <= in->cols + c - 1; col++)
 		{
 			set(m, row, col, get(in, row - r + 1, col - c + 1));
 		}
@@ -407,7 +452,7 @@ int Matrix::print(matrix* m)
 	{
 		for (int col = 1; col <= m->cols; col++)
 		{
-			printf("%6.4f ", get(m, row, col));
+			printf("%6.7f ", get(m, row, col));
 		}
 		printf("\n\n");
 	}
@@ -693,7 +738,7 @@ int Matrix::householder(matrix* A, matrix* Q, matrix* R)
 		double vn = norm(v);
 		double beta = (2 / pow(vn, 2));
 		if (vn == 0) { beta = 0;}
-		setSub(H, diff(identity(a->rows), scalar_prod(product(v, transpose(v)), beta)), a->rows, a->rows);
+		setSub(H, diff(identity(a->rows), scalar_prod(product(v, transpose(v)), beta)), A->rows - a->rows + 1, A->rows - a->rows + 1);
 		
 		//update Q and R
 		//get Q
@@ -730,6 +775,44 @@ Matrix::matrix* Matrix::diagonal_inverse(matrix* m)
 		else continue;
 	}
 	return out;
+}
+
+bool Matrix::issquare(matrix* m)
+{
+	return m->rows == m->cols;
+}
+
+double Matrix::determinant(matrix* m)
+{
+	if (!m) { std::cerr << "determinat: matrix not initialized properly \n";  return NULL; }
+	assert(issquare(m));
+
+	if (m->cols == 1) return get(m, 1, 1);
+
+	else if (m->cols == 2)
+	{
+		return get(m, 1, 1) * get(m, 2, 2) - get(m, 2, 1) * get(m, 1, 2);
+	}
+
+	else if (m->cols == 3)
+	{
+		return get(m, 1, 1) * get(m, 2, 2) * get(m, 3, 3) +
+			   get(m, 1, 2) * get(m, 2, 3) * get(m, 3, 1) +
+			   get(m, 1, 3) * get(m, 2, 1) * get(m, 3, 2) -
+			   get(m, 1, 1) * get(m, 2, 3) * get(m, 3, 2) -
+			   get(m, 1, 2) * get(m, 2, 1) * get(m, 3, 3) - 
+			   get(m, 1, 3) * get(m, 2, 2) * get(m, 3, 1) ;
+	}
+
+	else
+	{
+		matrix* Q = new matrix(m->rows, m->cols);
+		matrix* R = new matrix(m->cols, m->cols);
+		Matrix::householder(m, Q, R);
+		double val = get(R, 1, 1); int i;
+		for (i = 2; i <= R->cols; i++) val *= get(R, i, i);
+		return val;
+	}
 }
 
 int Matrix::solver(matrix* A, matrix* b, matrix* x)
@@ -831,7 +914,6 @@ int Matrix::svd(matrix* A, matrix* U, matrix* VT)
 	//calculate bidiagonal form of A
 	auto bidiagonal = [&](matrix* A, matrix* B, matrix* U, matrix* VT)
 	{
-		assert(A->rows > A->cols);
 		for (int k = 1; k <= MIN(A->rows, A->cols); k++)
 		{
 			//left hand
@@ -853,14 +935,38 @@ int Matrix::svd(matrix* A, matrix* U, matrix* VT)
 		}
 	};
 
-	auto givens = [&](int n, int k, double c, double s)
+	auto givens = [&](int n, int p1, int p2, double c, double s)
 	{
 		matrix* G = identity(n);
-		set(G, k, k, c); set(G, k, k + 1, s); set(G, k + 1, k, -s); set(G, k + 1, k + 1, c);
+		set(G, p1, p1, c); set(G, p1, p2, s); set(G, p2, p1, -s); set(G, p2, p2, c);
 		return G;
 	};
 
-	auto golubKahan = [&](matrix* B, matrix* Q, matrix* P)
+	auto diagZero = [&](matrix* B, int k)
+	{//zero superdiagonal element where diagonal is zero at (k,k)
+		matrix* G = identity(B->cols);
+		for (int i = 1; i <= B->cols - k; i++) {
+			double alpha = get(B, k, k + i), beta = get(B, k + i, k + i), r = hypot(alpha, beta), c = beta / r, s = -alpha / r;
+			matrix* G_i = givens(B->cols, k, k + i, c, s);
+			*B = *product(G_i, B);
+			*G = *product(G_i, G);
+		}
+		return G;
+	};
+
+	auto lastZero = [&](matrix* B)
+	{//when last diagonal element is zero
+		matrix* G = identity(B->cols);
+		for (int i = B->cols - 1; i >= 1; i--) {
+			double alpha = get(B, i, i), beta = get(B, i, B->cols), r = hypot(alpha, beta), c = alpha / r, s = -beta / r;
+			matrix* G_i = givens(B->cols, i, B->cols, c, s);
+			*B = *product(B, G_i);
+			*G = *product(G, G_i);
+		}
+		return G;
+	};
+
+	auto golubKahan = [&](matrix* B, matrix* Q, matrix* PT)
 	{
 		//B is square, no zeros on diagonal or superdiagonal
 		int n = B->cols;
@@ -876,114 +982,128 @@ int Matrix::svd(matrix* A, matrix* U, matrix* VT)
 		double mu = ((abs(lambda1 - a) < abs(lambda2 - a)) ? lambda1 : lambda2);
 		//chasing the bulge (implicit QR)
 		double alpha = pow(get(B, 1, 1), 2), beta = get(B, 1, 1) * get(B, 1, 2);
-		for (int k = 1; k <= n - 1; k++)
+		for (int k = 1; k <= n - 1 ; k++)
 		{
 			//right
 			double h = hypot(alpha, beta);
 			double c = (double)alpha / h, s = -(double)beta / h;
-			matrix* G = givens(n, k, c, s);
+			matrix* G = givens(n, k, k+1, c, s);
 			*B = *product(B, G);
-			*P = *product(P, G);
+			*PT = *product(PT, G);
 
 			//left
 			alpha = get(B, k, k); beta = get(B, k + 1, k);
 			h = hypot(alpha, beta);
-			c = alpha / h, s = -beta / h; ;
-			G = givens(n, k, c, -s);
+			c = alpha / h, s = - beta / h; ;
+			G = givens(n, k, k+1, c, -s);
 			*B = *product(G, B);
 			*Q = *product(G, Q);
-			if (k <= n - 1) { alpha = get(B, k, k + 1); beta = get(B, k, k + 2); }
+			if (k < n - 1) { alpha = get(B, k, k + 1); beta = get(B, k, k + 2); }
 		}
 	};
 
-	//svd
-	matrix* B = new matrix(A->rows, A->cols); *B = *A;
-	matrix* Q = identity(A->rows); matrix* PT = identity(A->cols);
 
-	//get bidiagonal form of A
-	bidiagonal(A, B, Q, PT);
-
-	//remove last (row - col) zero rows
-	*B = *getSub(B, 1, 1, A->cols, A->cols);
-	*Q = *getSub(Q, 1, 1, A->cols, A->cols);
-	*PT = *getSub(PT, 1, 1, A->cols, A->cols);
-	print(B);
-
-	//get diag and superdiag elements only
-	matrix* d = new matrix(B->cols, 1);        //diagonal
-	matrix* f = new matrix(B->cols - 1, 1);    //superdiagonal
-	for (int i = 1; i < B->cols; i++)
+	auto svd_iQR = [&](matrix* B, matrix* Q, matrix* PT)
 	{
-		set(d, i, 1, get(B, i, i)); set(f, i, 1, get(B, i, i + 1));
-	}
-	set(d, B->cols, 1, get(B, B->cols, B->cols));
+		//Implicit QR step
 
-	//print(B); print(Q); print(PT); print(product(product(Q, B), PT)); print(product(transpose(B), B));
+		double constexpr epsilon = 1e-40; // std::numeric_limits< double >::epsilon(); //change to machine epsilon
 
-	int q = 1, p = 0; double epsilon = 1e-6; //change to machine epsilon
+		int q = 1, p = 0, iter = 1;
 
-	while (q < A->cols)
-	{
-		print(B);
-		for (int i = 1; i <= B->cols - 1; i++)
+		while (q < B->cols)
 		{
-			if (abs(get(B, i, i + 1)) <= epsilon * (abs(get(B, i, i)) + abs(get(B, i + 1, i + 1)))) { set(B, i, i + 1, 0); }
-		}
-		// check superdiagonal elements for zero
-		for (int i = 1; i <= B->cols - 1; i++)
-		{
-			if (abs(get(B, i, i + 1)) <= epsilon) { p = i; break; }
-		}
+			//std::cout << "iter: " << iter << "\n"; 
+			iter++; if (iter > 500)break;
 
-		// check diagonal elements
-		for (int i = B->cols-1; i >= 1; i--)
-		{
-			if (abs(get(B, i, i)) < epsilon && abs(get(B, i + 1, i + 1)) < epsilon) { break; }
-			//if (abs(get(B, i, i)) > epsilon && abs(get(B, i, i + 1)) < epsilon) { q = B->cols - i + 1; }
-		}
-
-		std::cout << q << " " << p << "\n";
-
-		//matrix* B11 = getSub(B, 1, 1, p, p);
-		matrix* B22 = getSub(B, p + 1, p + 1, B->cols - q, B->cols - q) ; 
-		//matrix* B33 = getSub(B, B->cols - q + 1, B->cols - q + 1, B->cols, B->cols);
-		//print(B11); print(B33);
-
-		if (q == B->cols) { break; }
-
-		/*
-		for (int i = p + 1; i < B->cols - q; i++)
-		{
-			if (abs(get(B, i, i)) < epsilon)
+			for (int i = 1; i <= B->cols - 1; i++)
 			{
-				double alpha = pow(get(B, 1, 1), 2), beta = get(B, 1, 1) * get(B, 1, 2);
-				for (int k = 1; k < A->cols - i; k++)
+				if (abs(get(B, i, i + 1)) <= epsilon * (abs(get(B, i, i)) + abs(get(B, i + 1, i + 1)))) { set(B, i, i + 1, 0); }
+			}
+
+			// check diagonal elements
+			for (int i = 2; i <= B->cols; i++)
+			{
+				//std::cout << i << " " << abs(get(B, B->cols - i + 1, B->cols - i + 2)) << " ";
+				if (abs(get(B, B->cols - i + 1, B->cols - i + 2)) <= epsilon) q = i;
+				else  break;
+				//std::cout << "\n";
+			}
+			for (int i = 1; i < B->cols - q; i++)
+			{
+			    // check superdiagonal elements for zero
+				//std::cout << i <<" "<< abs(get(B, i, i + 1)) << " ";
+				if (abs(get(B, i, i + 1)) <= epsilon) { p = i; }
+				else {break;}
+				//std::cout << "\n";
+			}
+
+			//std::cout << "p " << p << " q " << q << "\n\n";
+			matrix* B11 = identity(1); matrix* B22 = identity(1); matrix* B33 = identity(1);
+
+			if (p >= 1)                 B11 = getSub(B, 1, 1, p, p);
+			if (p < B->cols - q)        B22 = getSub(B, p + 1, p + 1, B->cols - q + 1, B->cols - q + 1);
+			if (q >= 1)                 B33 = getSub(B, B->cols - q + 1, B->cols - q + 1, B->cols, B->cols);
+
+			if (q < B->cols)
+			{
+				//check and zero out superdiagonal elements in B22 if the diagonal is also zero
+				bool diag = false;
+				for (int i = 1; i <= B22->cols; i++) {
+					if (get(B, i, i) == 0)
+					{
+						diag = true;
+						if (i < B22->cols) { matrix* G = diagZero(B, i); *Q = *product(G, Q); }
+						if (i == B22->cols) { matrix* G = lastZero(B); *Q = *product(Q, G); }
+					}
+				}
+
+				if (diag == false)
 				{
-					//right
-					alpha = get(B, i, i); beta = get(B, i + k, i + k);
-					double h = hypot(alpha, beta);
-					double c = (double)alpha / h, s = -(double)beta / h;
-					matrix* G = givens(B->cols, k, c, -s);
-					*B = *product(B, G);
-					*PT = *product(G, PT);
+					matrix* Q22 = getSub(Q, p + 1, p + 1, B->cols - q + 1, B->cols - q + 1);
+					matrix* P22 = getSub(PT, p + 1, p + 1, B->cols - q + 1, B->cols - q + 1);
+					golubKahan(B22, Q22, P22);
+					setSub(B, B22, p + 1, p + 1);
+					setSub(Q, Q22, p + 1, p + 1);
+					setSub(PT, P22, p + 1, p + 1);
+					delete Q22, P22;
 				}
 			}
 		}
-		*/
-		{
-				matrix* P = transpose(PT);
-				//matrix* Q22 = getSub(Q, p + 1, p + 1, B->cols - q, B->cols - q);
-				//matrix* P22 = getSub(P, p + 1, p + 1, B->cols - q, B->cols - q);
-				golubKahan(B, Q, P);
-				//setSub(B, B22, p + 1, p + 1);
-				//setSub(Q, Q22, p + 1, p + 1);
-				//setSub(P, P22, p + 1, p + 1);
-				//*PT = *transpose(P);
-		}
-			
-	}
-	print(A); print(B);
-	setSub(A, B, 1, 1);
-	print(A); print(Q); print(PT); print(product(product(Q, B), PT)); 
+	};
+
+	//implementation  A = Q_f * B * PT_f
+	assert(A->rows >= A->cols);
+
+	matrix* B = new matrix(A->rows, A->cols); *B = *A;
+	matrix* Q = identity(A->rows); matrix* PT = identity(A->cols);
+
+	//get bidiagonal form of A: A = Q * B * PT
+	bidiagonal(A, B, Q, PT);
+
+	//remove last (row - col) zero rows
+	matrix* B_  = getSub(B, 1, 1, A->cols, A->cols);
+	matrix* Q_  = identity(A->cols); 
+	matrix* PT_ = identity(A->cols); 
+
+	//do francis algorithm : B = Q_ * B * PT_
+	svd_iQR(B_, Q_, PT_);
+
+	//insert back
+	setSub(B, B_, 1, 1);
+	matrix* Q_t = identity(A->rows);
+	setSub(Q_t, Q_, 1, 1);
+	matrix* Q_f = product(Q, transpose(Q_t));
+	matrix* PT_f = product(transpose(PT_), PT);
+
+	//check
+	//print(A);
+	//print(Q_f);
+	//print(B);
+	//print(PT_f); 
+	//print((product(product(Q_f, B), PT_f))); 
+
 	return 0;
 }
+
+

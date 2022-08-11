@@ -1,7 +1,9 @@
 #pragma once
 #define _CRT_SECURE_NO_WARNINGS
+#ifndef UTILS
+#define UTILS
 #include "utils.h"
-
+#endif //!UTILS
 
 namespace segmentpcd
 {

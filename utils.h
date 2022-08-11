@@ -1,5 +1,6 @@
 #pragma once
 #define _USE_MATH_DEFINES
+#define CONVHULL_3D_ENABLE
 #include <vector>
 #include <set>
 #include <tuple>
@@ -19,6 +20,7 @@
 #include <format>
 #include <omp.h>
 #include "include/nanoflann.hpp"
+#include "include/quickhull.h"
 
 #define SGN(x) (((x)<(0))?(-1):(1))
 #define MAX(a,b) (((a)>(b))?(a):(b))
@@ -31,6 +33,8 @@ namespace utils
 	{
 		double x = 0, y = 0, z = 0;
 		double nx = 0, ny = 0, nz = 0;
+		point(){}
+		point(double x, double y, double z, double nx, double ny, double nz):x(x), y(y), z(z), nx(nx), ny(ny), nz(nz){}
 	};
 
 	struct PointCloud
@@ -118,6 +122,7 @@ namespace utils
 	void computeNormals(utils::PointCloud* cloud, const utils::PointCloudAdaptor& pcadaptor, const size_t& num_neighbors);
 	void orientNormals(utils::PointCloud* cloud);
 	void statisticalOutlierRemoval(utils::PointCloud* cloud, utils::PointCloud* cloudout, size_t nb_neighbors, double std_ratio);
+	int normalinversion(utils::PointCloud* cloud);
 }
  
 namespace Matrix
@@ -151,6 +156,8 @@ namespace Matrix
 	int max(matrix* m, double* out, const bool& diag);
 
 	matrix* identity(int size);
+
+	bool issquare(matrix* m);
 
 	int setColumn(matrix* m, matrix* val, int col);
 	
@@ -202,7 +209,11 @@ namespace Matrix
 
 	matrix* diagonal_inverse(matrix* m);
 
+	double determinant(matrix* m);
+
 	int solver(matrix* A, matrix* b, matrix* x);
+
+	matrix* givens(matrix* m, int r, int c);
 
 	int svd(matrix* A, matrix* U, matrix* VT);
 	
@@ -215,7 +226,7 @@ namespace Matrix
 	void euler2rot(Matrix::matrix* euler, Matrix::matrix* rot, Matrix::matrix* t);
 
 	void updateFromEuler(Matrix::matrix* deltaEuler, Matrix::matrix* rot, Matrix::matrix* t);
-
-	matrix* givens(matrix* m, int r, int c);
+	
 }
+
 
