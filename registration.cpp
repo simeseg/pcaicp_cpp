@@ -169,6 +169,9 @@ int Registration::Align(utils::PointCloud* _model, utils::PointCloud* _scene, ut
 	*h_final = *Matrix::product(h_eig, h_final);
 	*h_final = *Matrix::product(h_o2s, h_final);
 
+	std::ofstream hout("image/h_final.txt"); 
+	for (auto& v : h_final->data) { hout << v << " ";}
+	
 	print(h_final);
 	std::cout << transform_out->fitness;
 	return 0;
