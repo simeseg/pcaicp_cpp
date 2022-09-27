@@ -157,16 +157,16 @@ int Registration::Align(utils::PointCloud* _model, utils::PointCloud* _scene, ut
 	Matrix::matrix* staticMeanMat = new Matrix::matrix(3, 1); double arr2[] = { -staticMean.x, -staticMean.y, -staticMean.z };
 	staticMeanMat->data.assign(arr2, arr2 + 3); Matrix::setColumn(h_m2o, staticMeanMat, 4); delete staticMeanMat, arr2;
 
-	Matrix::matrix* h_eig = Matrix::identity(4);
-	Matrix::setRow(h_eig, Matrix::transpose(Matrix::getColumn(R, 1)), 1);
-	Matrix::setRow(h_eig, Matrix::transpose(Matrix::getColumn(R, 2)), 2);
-	Matrix::setRow(h_eig, Matrix::transpose(Matrix::getColumn(R, 3)), 3);
-	Matrix::matrix* shift = new Matrix::matrix(3, 1); 
-	shift->data[0] = 0; shift->data[1] = 0; shift->data[2] = -Params->vertical_shift; 
-	Matrix::setColumn(h_eig, Matrix::product(transform_out->rotation, shift), 4); 
+	Matrix::matrix* h_reg = Matrix::identity(4);
+	Matrix::matrix* shift = new Matrix::matrix(3, 1);
+	shift->data[0] = 0; shift->data[1] = 0; shift->data[2] = Params->vertical_shift;
+	*shift = *Matrix::product(R_out, shift);
+	Matrix::matrix* R_reg = Matrix::product(transform_out->rotation, R_out);
+	Matrix::matrix* t_reg = Matrix::sum(Matrix::product(transform_out->rotation, shift), transform_out->translation);
+	Matrix::setSub(h_reg, Matrix::transpose(R_reg), 1, 1);
+	Matrix::setColumn(h_reg, Matrix::scalar_prod(Matrix::product(Matrix::transpose(R_reg), t_reg), -1), 4);
 
-	Matrix::matrix* h_final = Matrix::product( transform_out->transformation(), h_m2o);
-	*h_final = *Matrix::product(h_eig, h_final);
+	Matrix::matrix* h_final = Matrix::product(h_reg, h_m2o);
 	*h_final = *Matrix::product(h_o2s, h_final);
 
 	std::ofstream hout("image/h_final.txt"); 
