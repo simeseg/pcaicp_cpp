@@ -1,8 +1,11 @@
 #pragma once
+#ifndef REG
+#define REG
+
 #ifndef UTILS
-#define UTILS
-#include "utils.h"
-#endif //!UTILS
+#include "include/utils.h"
+#endif
+
 #include <random>
 #include <string>
 #include <iterator>
@@ -20,7 +23,7 @@ namespace Registration
 		double k;
 		size_t number_of_correspondences;
 
-		params():dist(1.0), mode("point"), iterations(100), vertical_shift(-5.0), loss("l1"), k(1.0), number_of_correspondences(500) {}
+		params():dist(1.0), mode("point"), iterations(100), vertical_shift(-5.0), loss("l1"), k(1.0), number_of_correspondences(5000) {}
 		params(double _dist, std::string _mode, int _iterations, double _vertical_shift, std::string _loss) :
 			dist(_dist), mode(_mode), iterations(_iterations), vertical_shift(_vertical_shift), loss(_loss){}
 
@@ -51,7 +54,7 @@ namespace Registration
 		params* P;
 		transform* update;
 		Matrix::matrix* _dynamic = new Matrix::matrix(1, 1);
-		Matrix::matrix* _static = new Matrix::matrix(1,1);
+		Matrix::matrix* _static = new Matrix::matrix(1, 1);
 		Matrix::matrix* _normals = new Matrix::matrix(1, 1);
 		std::vector<std::tuple<int, int, double>> correspondences;  //dynamic id , static id, distance
 		std::vector<int> _static_indexes, _dynamic_indexes;
@@ -69,20 +72,20 @@ namespace Registration
 			:_static(model), _normals(normals), _dynamic(scene), update(transform), tree(modeltree), P(params)
 		{
 			setIndexes();
-			if(P->mode == "point") point2point_svd();
+			if (P->mode == "point") point2point_svd();
 			if (P->mode == "plane") point2plane();
 			*scene = *_dynamic;
 		}
 
-		double kernel(const double& residual,const std::string& loss)
+		double kernel(const double& residual, const std::string& loss)
 		{
 			if (loss == "l1") return 1 / residual;
-			if (loss == "huber") return P->k / MAX(P->k, residual); 
+			if (loss == "huber") return P->k / MAX(P->k, residual);
 			if (loss == "cauchy") return 1 / (1 + pow(residual / P->k, 2));
 			if (loss == "gm") return P->k / pow(P->k + pow(residual, 2), 2);
 			if (loss == "tukey") return pow(1.0 - pow(MIN(1.0, abs(residual) / P->k), 2), 2);
 		}
-		
+
 		void setIndexes()
 		{
 			//static cloud
@@ -93,8 +96,8 @@ namespace Registration
 			_dynamic_indexes.resize(_dynamic->cols);
 			std::iota(std::begin(_dynamic_indexes), std::end(_dynamic_indexes), 1);
 		}
-		
-		void getCorrespondences();		
+
+		void getCorrespondences();
 		void umeyama(Matrix::matrix* A, Matrix::matrix* B, Matrix::matrix* R, Matrix::matrix* t);
 		void jacobian1(Matrix::matrix* rot_p, Matrix::matrix* J);
 		void point2point();
@@ -103,7 +106,7 @@ namespace Registration
 		void point2plane();
 		void updateDynamic(Matrix::matrix* deltaR, Matrix::matrix* deltaT);
 
-		~icp(){}
+		~icp() {}
 	};
 
 	Matrix::matrix* principal_axis(Matrix::matrix* data);
@@ -111,3 +114,5 @@ namespace Registration
 	Matrix::matrix* alignment(Matrix::matrix* cloud, Matrix::matrix* R, double vertical_shift);
 	int Align(utils::PointCloud* model, utils::PointCloud* scene, utils::PointCloud* scene_out);
 }
+
+#endif 
